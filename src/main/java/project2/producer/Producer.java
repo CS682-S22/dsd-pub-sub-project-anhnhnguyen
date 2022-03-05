@@ -11,17 +11,17 @@ import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 
 public class Producer {
-    private final Logger logger = LoggerFactory.getLogger(Producer.class);
+    private final Logger LOGGER = LoggerFactory.getLogger(Producer.class);
     private Socket socket;
     private DataOutputStream dos;
 
     public Producer(String host, int port) {
         try {
             this.socket = new Socket(host, port);
-            logger.info("open connection with broker: " + host + ":" + port);
+            LOGGER.info("open connection with broker: " + host + ":" + port);
             this.dos = new DataOutputStream(socket.getOutputStream());
         } catch (IOException e) {
-            logger.error("can't open connection with broker: " + host + ":" + port + " " + e.getMessage());
+            LOGGER.error("can't open connection with broker: " + host + ":" + port + " " + e.getMessage());
         }
     }
 
@@ -36,9 +36,9 @@ public class Producer {
         try {
             dos.writeInt(wrapper.toByteArray().length);
             dos.write(wrapper.toByteArray());
-            logger.info("message sent. topic: " + topic + ", data: " + new String(data, StandardCharsets.UTF_8));
+            LOGGER.info("message sent. topic: " + topic + ", data: " + new String(data, StandardCharsets.UTF_8));
         } catch (IOException e) {
-            logger.error("send(): " + e.getMessage());
+            LOGGER.error("send(): " + e.getMessage());
         }
     }
 
@@ -46,9 +46,9 @@ public class Producer {
         try {
             dos.close();
             socket.close();
-            logger.info("closing producer");
+            LOGGER.info("closing producer");
         } catch (IOException e) {
-            logger.error("close(): " + e.getMessage());
+            LOGGER.error("close(): " + e.getMessage());
         }
     }
 }
