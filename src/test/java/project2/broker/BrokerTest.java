@@ -3,6 +3,7 @@ package project2.broker;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import project2.Constants;
 import project2.consumer.Consumer;
 import project2.producer.Producer;
 
@@ -35,7 +36,7 @@ class BrokerTest {
         producer.close();
         Consumer consumer = new Consumer(HOST, PORT, TOPIC, 0);
         byte[] message = consumer.poll(100);
-        while (message == null || new String(message, StandardCharsets.UTF_8).startsWith("Invalid request")) {
+        while (message == null || new String(message, StandardCharsets.UTF_8).equals(Constants.INVALID_TOPIC)) {
             message = consumer.poll(100);
         }
         assertArrayEquals(message, DATA);
@@ -49,10 +50,10 @@ class BrokerTest {
         producer.close();
         Consumer consumer = new Consumer(HOST, PORT, TOPIC, 1);
         byte[] message = consumer.poll(100);
-        while (message == null || !new String(message, StandardCharsets.UTF_8).startsWith("Invalid request: starting")) {
+        while (message == null || !new String(message, StandardCharsets.UTF_8).equals(Constants.INVALID_STARTING_POSITION)) {
             message = consumer.poll(100);
         }
-        assertEquals(new String(message, StandardCharsets.UTF_8), "Invalid request: starting position doesn't exist");
+        assertEquals(new String(message, StandardCharsets.UTF_8), Constants.INVALID_STARTING_POSITION);
         consumer.close();
     }
 
@@ -66,7 +67,7 @@ class BrokerTest {
         while (message == null) {
             message = consumer.poll(100);
         }
-        assertEquals(new String(message, StandardCharsets.UTF_8), "Invalid request: topic doesn't exist");
+        assertEquals(new String(message, StandardCharsets.UTF_8), Constants.INVALID_TOPIC);
         consumer.close();
     }
 
@@ -148,7 +149,8 @@ class BrokerTest {
             int count = 0;
             while (count < 30 - startingPosition) {
                 byte[] message = consumer.poll(100);
-                if (message != null && !new String(message, StandardCharsets.UTF_8).startsWith("Invalid request")) {
+                if (message != null && !new String(message, StandardCharsets.UTF_8).equals(Constants.INVALID_TOPIC)
+                        && !new String(message, StandardCharsets.UTF_8).equals(Constants.INVALID_STARTING_POSITION)) {
                     count++;
                 }
             }

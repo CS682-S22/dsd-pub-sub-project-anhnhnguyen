@@ -2,6 +2,7 @@ package project2.broker;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import project2.Constants;
 
 import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousSocketChannel;
@@ -50,7 +51,7 @@ public class Connection {
     public Connection(AsynchronousSocketChannel socketChannel) {
         this.socketChannel = socketChannel;
         this.messages = new LinkedList<>();
-        this.buffer = ByteBuffer.allocate(1024);
+        this.buffer = ByteBuffer.allocate(Constants.CONNECTION_BYTE_ALLOCATION);
         this.readResult = null;
     }
 

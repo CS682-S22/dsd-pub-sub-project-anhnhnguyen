@@ -78,4 +78,4 @@ META-INF/
 .idea/
 .DS_Store
 data/
-app.log
+*.log

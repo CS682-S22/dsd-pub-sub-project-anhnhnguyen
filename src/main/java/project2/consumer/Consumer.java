@@ -2,6 +2,7 @@ package project2.consumer;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import project2.Constants;
 import project2.protos.Message;
 
 import java.io.DataInputStream;
@@ -63,7 +64,8 @@ public class Consumer {
             while (length > 0) {
                 byte[] message = new byte[length];
                 dis.readFully(message, 0, length);
-                if (new String(message).startsWith("Invalid request")) {
+                if (new String(message).equals(Constants.INVALID_TOPIC) ||
+                        new String(message).equals(Constants.INVALID_STARTING_POSITION) ) {
                     return message;
                 }
                 queue.add(message);

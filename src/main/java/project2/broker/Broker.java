@@ -3,6 +3,7 @@ package project2.broker;
 import com.google.protobuf.InvalidProtocolBufferException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import project2.Constants;
 import project2.protos.Message;
 
 import java.io.IOException;
@@ -105,12 +106,12 @@ public class Broker {
 
     private void processPullReq(Connection connection, String topic, int startingPosition) {
         if (!topics.containsKey(topic)) {
-            connection.send("Invalid request: topic doesn't exist".getBytes(StandardCharsets.UTF_8));
+            connection.send(Constants.INVALID_TOPIC.getBytes(StandardCharsets.UTF_8));
             LOGGER.info("Invalid request: topic: " + topic + " doesn't exist");
         } else {
             List<byte[]> list = topics.get(topic);
             if (startingPosition >= list.size()) {
-                connection.send("Invalid request: starting position doesn't exist".getBytes(StandardCharsets.UTF_8));
+                connection.send(Constants.INVALID_STARTING_POSITION.getBytes(StandardCharsets.UTF_8));
                 LOGGER.info("Invalid request: starting position: " + startingPosition + " doesn't exist");
             } else {
                 while (startingPosition < list.size()) {
