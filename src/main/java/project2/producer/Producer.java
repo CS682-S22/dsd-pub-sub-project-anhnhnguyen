@@ -44,8 +44,10 @@ public class Producer {
 
     public void close() {
         try {
-            dos.close();
+            socket.shutdownInput();
+            socket.shutdownOutput();
             socket.close();
+            dos.close();
             LOGGER.info("closing producer");
         } catch (IOException e) {
             LOGGER.error("close(): " + e.getMessage());

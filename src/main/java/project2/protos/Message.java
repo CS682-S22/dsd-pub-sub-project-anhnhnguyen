@@ -673,10 +673,10 @@ public final class Message {
         getTopicBytes();
 
     /**
-     * <code>int64 startingPosition = 2;</code>
+     * <code>int32 startingPosition = 2;</code>
      * @return The startingPosition.
      */
-    long getStartingPosition();
+    int getStartingPosition();
   }
   /**
    * Protobuf type {@code PullRequest}
@@ -732,7 +732,7 @@ public final class Message {
             }
             case 16: {
 
-              startingPosition_ = input.readInt64();
+              startingPosition_ = input.readInt32();
               break;
             }
             default: {
@@ -806,13 +806,13 @@ public final class Message {
     }
 
     public static final int STARTINGPOSITION_FIELD_NUMBER = 2;
-    private long startingPosition_;
+    private int startingPosition_;
     /**
-     * <code>int64 startingPosition = 2;</code>
+     * <code>int32 startingPosition = 2;</code>
      * @return The startingPosition.
      */
     @java.lang.Override
-    public long getStartingPosition() {
+    public int getStartingPosition() {
       return startingPosition_;
     }
 
@@ -833,8 +833,8 @@ public final class Message {
       if (!com.google.protobuf.GeneratedMessageV3.isStringEmpty(topic_)) {
         com.google.protobuf.GeneratedMessageV3.writeString(output, 1, topic_);
       }
-      if (startingPosition_ != 0L) {
-        output.writeInt64(2, startingPosition_);
+      if (startingPosition_ != 0) {
+        output.writeInt32(2, startingPosition_);
       }
       unknownFields.writeTo(output);
     }
@@ -848,9 +848,9 @@ public final class Message {
       if (!com.google.protobuf.GeneratedMessageV3.isStringEmpty(topic_)) {
         size += com.google.protobuf.GeneratedMessageV3.computeStringSize(1, topic_);
       }
-      if (startingPosition_ != 0L) {
+      if (startingPosition_ != 0) {
         size += com.google.protobuf.CodedOutputStream
-          .computeInt64Size(2, startingPosition_);
+          .computeInt32Size(2, startingPosition_);
       }
       size += unknownFields.getSerializedSize();
       memoizedSize = size;
@@ -885,8 +885,7 @@ public final class Message {
       hash = (37 * hash) + TOPIC_FIELD_NUMBER;
       hash = (53 * hash) + getTopic().hashCode();
       hash = (37 * hash) + STARTINGPOSITION_FIELD_NUMBER;
-      hash = (53 * hash) + com.google.protobuf.Internal.hashLong(
-          getStartingPosition());
+      hash = (53 * hash) + getStartingPosition();
       hash = (29 * hash) + unknownFields.hashCode();
       memoizedHashCode = hash;
       return hash;
@@ -1022,7 +1021,7 @@ public final class Message {
         super.clear();
         topic_ = "";
 
-        startingPosition_ = 0L;
+        startingPosition_ = 0;
 
         return this;
       }
@@ -1104,7 +1103,7 @@ public final class Message {
           topic_ = other.topic_;
           onChanged();
         }
-        if (other.getStartingPosition() != 0L) {
+        if (other.getStartingPosition() != 0) {
           setStartingPosition(other.getStartingPosition());
         }
         this.mergeUnknownFields(other.unknownFields);
@@ -1212,33 +1211,33 @@ public final class Message {
         return this;
       }
 
-      private long startingPosition_ ;
+      private int startingPosition_ ;
       /**
-       * <code>int64 startingPosition = 2;</code>
+       * <code>int32 startingPosition = 2;</code>
        * @return The startingPosition.
        */
       @java.lang.Override
-      public long getStartingPosition() {
+      public int getStartingPosition() {
         return startingPosition_;
       }
       /**
-       * <code>int64 startingPosition = 2;</code>
+       * <code>int32 startingPosition = 2;</code>
        * @param value The startingPosition to set.
        * @return This builder for chaining.
        */
-      public Builder setStartingPosition(long value) {
+      public Builder setStartingPosition(int value) {
         
         startingPosition_ = value;
         onChanged();
         return this;
       }
       /**
-       * <code>int64 startingPosition = 2;</code>
+       * <code>int32 startingPosition = 2;</code>
        * @return This builder for chaining.
        */
       public Builder clearStartingPosition() {
         
-        startingPosition_ = 0L;
+        startingPosition_ = 0;
         onChanged();
         return this;
       }
@@ -2269,7 +2268,7 @@ public final class Message {
       "\n\024protos/message.proto\"-\n\016PublishRequest" +
       "\022\014\n\004data\030\001 \001(\014\022\r\n\005topic\030\002 \001(\t\"6\n\013PullReq" +
       "uest\022\r\n\005topic\030\001 \001(\t\022\030\n\020startingPosition\030" +
-      "\002 \001(\003\"T\n\007Wrapper\022!\n\006pubReq\030\001 \001(\0132\017.Publi" +
+      "\002 \001(\005\"T\n\007Wrapper\022!\n\006pubReq\030\001 \001(\0132\017.Publi" +
       "shRequestH\000\022\037\n\007pullReq\030\002 \001(\0132\014.PullReque" +
       "stH\000B\005\n\003msgB\032\n\017project2.protosB\007Messageb" +
       "\006proto3"

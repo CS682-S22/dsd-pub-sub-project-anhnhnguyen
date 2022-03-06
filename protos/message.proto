@@ -13,7 +13,7 @@ message PublishRequest {
 
 message PullRequest {
   string topic = 1;
-  int64 startingPosition = 2;
+  int32 startingPosition = 2;
 }
 
 message Wrapper {

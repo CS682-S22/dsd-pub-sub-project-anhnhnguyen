@@ -27,7 +27,14 @@ class ConsumerTest {
         });
         t.start();
         Consumer consumer = new Consumer("localhost", 1024, "test", 0);
-        byte[] message = consumer.poll(500);
+
+        long currentTime = System.currentTimeMillis();
+        long endTime = currentTime + 500;
+        byte[] message = consumer.poll(10);
+        while (System.currentTimeMillis() < endTime) {
+            message = consumer.poll(10);
+        }
+
         assertNull(message);
         try {
             t.join();

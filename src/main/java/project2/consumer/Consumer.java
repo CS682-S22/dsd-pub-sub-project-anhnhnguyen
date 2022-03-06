@@ -16,12 +16,12 @@ public class Consumer {
     private final Logger LOGGER = LoggerFactory.getLogger(Consumer.class);
     private Socket socket;
     private final String topic;
-    private long startingPosition;
+    private int startingPosition;
     private DataInputStream dis;
     private DataOutputStream dos;
     private final Queue<byte[]> queue;
 
-    public Consumer(String host, int port, String topic, long startingPosition) {
+    public Consumer(String host, int port, String topic, int startingPosition) {
         this.topic = topic;
         this.startingPosition = startingPosition;
         this.queue = new LinkedList<>();
@@ -35,7 +35,7 @@ public class Consumer {
         }
     }
 
-    private void send(String topic, long startingPosition) {
+    private void send(String topic, int startingPosition) {
         Message.PullRequest pullReq = Message.PullRequest.newBuilder()
                 .setTopic(topic)
                 .setStartingPosition(startingPosition)
@@ -63,6 +63,9 @@ public class Consumer {
             while (length > 0) {
                 byte[] message = new byte[length];
                 dis.readFully(message, 0, length);
+                if (new String(message).startsWith("Invalid request")) {
+                    return message;
+                }
                 queue.add(message);
                 startingPosition++;
                 length = dis.readInt();
@@ -77,6 +80,8 @@ public class Consumer {
 
     public void close() {
         try {
+            socket.shutdownInput();
+            socket.shutdownOutput();
             socket.close();
             dis.close();
             dos.close();
