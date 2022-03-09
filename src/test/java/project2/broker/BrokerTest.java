@@ -16,6 +16,7 @@ class BrokerTest {
     private final int PORT = 1024;
     private Broker broker;
     private final String TOPIC = "test";
+    private final String KEY = "key";
     private final byte[] DATA = "this is a test".getBytes(StandardCharsets.UTF_8);
 
     @BeforeEach
@@ -32,42 +33,14 @@ class BrokerTest {
     @Test
     void testBrokerSimpleValidPubPullReq() {
         Producer producer = new Producer(HOST, PORT);
-        producer.send(TOPIC, DATA);
+        producer.send(TOPIC, KEY, DATA);
         producer.close();
         Consumer consumer = new Consumer(HOST, PORT, TOPIC, 0);
-        byte[] message = consumer.poll(100);
-        while (message == null || new String(message, StandardCharsets.UTF_8).equals(Constants.INVALID_TOPIC)) {
-            message = consumer.poll(100);
-        }
-        assertArrayEquals(message, DATA);
-        consumer.close();
-    }
-
-    @Test
-    void testBrokerSimpleInvalidPositionPubPullReq() {
-        Producer producer = new Producer(HOST, PORT);
-        producer.send(TOPIC, DATA);
-        producer.close();
-        Consumer consumer = new Consumer(HOST, PORT, TOPIC, 1);
-        byte[] message = consumer.poll(100);
-        while (message == null || !new String(message, StandardCharsets.UTF_8).equals(Constants.INVALID_STARTING_POSITION)) {
-            message = consumer.poll(100);
-        }
-        assertEquals(new String(message, StandardCharsets.UTF_8), Constants.INVALID_STARTING_POSITION);
-        consumer.close();
-    }
-
-    @Test
-    void testBrokerSimpleInvalidTopicPubPullReq() {
-        Producer producer = new Producer(HOST, PORT);
-        producer.send(TOPIC, DATA);
-        producer.close();
-        Consumer consumer = new Consumer(HOST, PORT, "random", 0);
         byte[] message = consumer.poll(100);
         while (message == null) {
             message = consumer.poll(100);
         }
-        assertEquals(new String(message, StandardCharsets.UTF_8), Constants.INVALID_TOPIC);
+        assertArrayEquals(message, DATA);
         consumer.close();
     }
 
@@ -132,7 +105,7 @@ class BrokerTest {
         public void run() {
             Producer producer = new Producer(HOST, PORT);
             for (int i = 0; i < 10; i++) {
-                producer.send(TOPIC, DATA);
+                producer.send(TOPIC, KEY, DATA);
             }
             producer.close();
         }

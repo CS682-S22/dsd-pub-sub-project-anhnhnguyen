@@ -51,7 +51,7 @@ public class Connection {
     public Connection(AsynchronousSocketChannel socketChannel) {
         this.socketChannel = socketChannel;
         this.messages = new LinkedList<>();
-        this.buffer = ByteBuffer.allocate(Constants.CONNECTION_BYTE_ALLOCATION);
+        this.buffer = ByteBuffer.allocate(Constants.BYTE_ALLOCATION);
         this.readResult = null;
     }
 
@@ -74,15 +74,15 @@ public class Connection {
                     int size = buffer.position();
                     int count = 0;
                     buffer.flip(); // set the position to 0
-                    while (count + 4 < size) { // need 4 bytes to read an int
-                        int length = buffer.getInt();
-                        if (count + length + 4 > size) { // message is partially read in due to buffer capacity
+                    while (count + 2 < size) { // need 2 bytes to read a short
+                        int length = buffer.getShort();
+                        if (count + length + 2 > size) { // message is partially read in due to buffer capacity
                             break;
                         }
                         byte[] bytes = new byte[length];
                         buffer.get(bytes, 0, length);
                         messages.add(bytes);
-                        count += (length + 4);
+                        count += (length + 2);
                     }
                     if (count < size) { // bytes not read due to buffer capacity
                         buffer.position(count);
@@ -111,8 +111,8 @@ public class Connection {
     public void send(byte[] message) {
         try {
             if (socketChannel != null && socketChannel.isOpen()) {
-                ByteBuffer buffer = ByteBuffer.allocate(message.length + 4);
-                buffer.putInt(message.length);
+                ByteBuffer buffer = ByteBuffer.allocate(message.length + 2);
+                buffer.putShort((short) message.length);
                 buffer.put(message);
                 buffer.flip();
                 Future<Integer> writeResult = socketChannel.write(buffer);

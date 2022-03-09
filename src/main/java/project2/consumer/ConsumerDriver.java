@@ -25,9 +25,7 @@ public class ConsumerDriver {
                     byte[] data = consumer.poll(TIME_OUT);
                     if (data != null) {
                         String txt = new String(data, StandardCharsets.UTF_8);
-                        if (!txt.equals(Constants.INVALID_TOPIC) && !txt.equals(Constants.INVALID_STARTING_POSITION)) {
-                            bw.write(txt + "\n");
-                        }
+                        bw.write(txt + "\n");
                     }
                 }
                 bw.close();

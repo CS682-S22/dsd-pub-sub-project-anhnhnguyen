@@ -54,10 +54,10 @@ class ConsumerTest {
                 if (socket.getInputStream().read() != -1) {
                     for (int i = 0; i < 100; i++) {
                         Thread.sleep(20);
-                        dos.writeInt("test".getBytes(StandardCharsets.UTF_8).length);
+                        dos.writeShort("test".getBytes(StandardCharsets.UTF_8).length);
                         dos.write("test".getBytes(StandardCharsets.UTF_8));
                     }
-                    dos.writeInt(-1);
+                    dos.writeShort(-1);
                 }
                 dos.close();
                 socket.close();

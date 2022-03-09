@@ -1,10 +1,10 @@
 package project2.broker;
 
-import com.google.protobuf.InvalidProtocolBufferException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import project2.Constants;
-import project2.protos.Message;
+import project2.consumer.PullReq;
+import project2.producer.PubReq;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -69,28 +69,25 @@ public class Broker {
     }
 
     private void processRequest(Connection connection, byte[] request) {
-        try {
-            Message.Wrapper wrapper = Message.Wrapper.parseFrom(request);
-            if (wrapper.hasPubReq()) {
-                Message.PublishRequest pubReq = wrapper.getPubReq();
-                String topic = pubReq.getTopic();
-                byte[] data = pubReq.getData().toByteArray();
-                LOGGER.info("publish request. topic: " + topic + ", data: " + new String(data, StandardCharsets.UTF_8));
-                processPubReq(topic, data);
-            }
-            if (wrapper.hasPullReq()) {
-                Message.PullRequest pullReq = wrapper.getPullReq();
-                String topic = pullReq.getTopic();
-                int startingPosition = pullReq.getStartingPosition();
-                LOGGER.info("pull request. topic: " + topic + ", starting position: " + startingPosition);
-                processPullReq(connection, topic, startingPosition);
-            }
-        } catch (InvalidProtocolBufferException e) {
-            LOGGER.error("processRequest(): " + e.getMessage());
+        if (request[0] == Constants.PUB_REQ) {
+            PubReq pubReq = new PubReq(request);
+            String topic = pubReq.getTopic();
+            String key = pubReq.getKey();
+            byte[] data = pubReq.getData();
+            LOGGER.info("publish request. topic: " + topic + ", key: " + key +
+                    ", data: " + new String(data, StandardCharsets.UTF_8));
+            processPubReq(topic, key, data);
+        }
+        if (request[0] == Constants.PULL_REQ) {
+            PullReq pullReq = new PullReq(request);
+            String topic = pullReq.getTopic();
+            long startingPosition = pullReq.getStartingPosition();
+            LOGGER.info("pull request. topic: " + topic + ", starting position: " + startingPosition);
+            processPullReq(connection, topic, startingPosition);
         }
     }
 
-    private void processPubReq(String topic, byte[] data) {
+    private void processPubReq(String topic, String key, byte[] data) {
         // Reference: https://stackoverflow.com/questions/18605876/concurrent-hashmap-and-copyonwritearraylist
         CopyOnWriteArrayList<byte[]> copy = topics.get(topic);
         if (copy == null) {
@@ -104,20 +101,16 @@ public class Broker {
         LOGGER.info("data added to topic: " + topic);
     }
 
-    private void processPullReq(Connection connection, String topic, int startingPosition) {
-        if (!topics.containsKey(topic)) {
-            connection.send(Constants.INVALID_TOPIC.getBytes(StandardCharsets.UTF_8));
-            LOGGER.info("Invalid request: topic: " + topic + " doesn't exist");
-        } else {
+    private void processPullReq(Connection connection, String topic, long startingPosition) {
+        if (topics.containsKey(topic)) {
             List<byte[]> list = topics.get(topic);
-            if (startingPosition >= list.size()) {
-                connection.send(Constants.INVALID_STARTING_POSITION.getBytes(StandardCharsets.UTF_8));
-                LOGGER.info("Invalid request: starting position: " + startingPosition + " doesn't exist");
-            } else {
-                while (startingPosition < list.size()) {
-                    connection.send(list.get(startingPosition));
+            if (startingPosition < list.size()) {
+                int count = 0;
+                while (startingPosition < list.size() && count < Constants.NUM_RESPONSE) {
+                    connection.send(list.get((int) startingPosition));
                     LOGGER.info("data at: " + startingPosition + " from topic: " + topic + " sent");
                     startingPosition++;
+                    count++;
                 }
             }
         }

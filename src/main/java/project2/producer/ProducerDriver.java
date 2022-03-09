@@ -18,8 +18,9 @@ public class ProducerDriver {
             String line;
             while ((line = br.readLine()) != null) {
                 String topic = findTopic(line);
+                String key = findKey(line);
                 byte[] data = findData(line);
-                producer.send(topic, data);
+                producer.send(topic, key, data);
             }
         } catch (IOException e) {
             LOGGER.error(e.getMessage());
@@ -72,6 +73,10 @@ public class ProducerDriver {
             index--;
         }
         return sb.reverse().toString();
+    }
+
+    private static String findKey(String line) {
+        return line.split(" ")[3];
     }
 
     private static byte[] findData(String line) {
