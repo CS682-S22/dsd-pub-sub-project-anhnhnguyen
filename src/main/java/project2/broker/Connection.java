@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import project2.Constants;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousSocketChannel;
 import java.util.LinkedList;
@@ -70,6 +71,7 @@ public class Connection {
             }
             try {
                 if (readResult.get(500, TimeUnit.MILLISECONDS) != -1 && readResult.isDone()) {
+                    LOGGER.info("received message from: " + socketChannel.getRemoteAddress());
                     readResult = null;
                     int size = buffer.position();
                     int count = 0;
@@ -94,7 +96,7 @@ public class Connection {
                         buffer.clear();
                     }
                 }
-            } catch (InterruptedException | ExecutionException e) {
+            } catch (InterruptedException | ExecutionException | IOException e) {
                 LOGGER.error("receive(): " + e.getMessage());
             } catch (TimeoutException e) {
                 // do nothing
@@ -117,8 +119,9 @@ public class Connection {
                 buffer.flip();
                 Future<Integer> writeResult = socketChannel.write(buffer);
                 writeResult.get();
+                LOGGER.info("sent message to: " + socketChannel.getRemoteAddress());
             }
-        } catch (InterruptedException | ExecutionException e) {
+        } catch (InterruptedException | ExecutionException | IOException e) {
             LOGGER.error("send(byte[] message): " + e.getMessage());
         }
     }

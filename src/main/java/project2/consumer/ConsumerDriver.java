@@ -3,6 +3,7 @@ package project2.consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import project2.Constants;
+import project2.broker.ReqRes;
 
 import java.io.BufferedWriter;
 import java.io.FileWriter;
@@ -24,8 +25,11 @@ public class ConsumerDriver {
                 while (isRunning) {
                     byte[] data = consumer.poll(TIME_OUT);
                     if (data != null) {
-                        String txt = new String(data, StandardCharsets.UTF_8);
-                        bw.write(txt + "\n");
+                        ReqRes response = new ReqRes(data);
+                        String key = response.getKey();
+                        String txt = new String(response.getData(), StandardCharsets.UTF_8);
+                        bw.write(key + " " + txt + "\n");
+                        LOGGER.info("write to file: " + args[2] + ".log");
                     }
                 }
                 bw.close();

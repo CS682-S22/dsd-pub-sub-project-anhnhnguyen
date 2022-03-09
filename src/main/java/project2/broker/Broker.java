@@ -8,6 +8,7 @@ import project2.producer.PubReq;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousServerSocketChannel;
 import java.nio.channels.AsynchronousSocketChannel;
 import java.nio.channels.CompletionHandler;
@@ -20,14 +21,13 @@ public class Broker {
     private final Logger LOGGER = LoggerFactory.getLogger(Broker.class);
     private AsynchronousServerSocketChannel server;
     private volatile boolean isRunning;
-    private final ConcurrentHashMap<String, CopyOnWriteArrayList<byte[]>> topics;
+    private final ConcurrentHashMap<String, CopyOnWriteArrayList<PubReq>> topics;
 
     public Broker(String host, int port) {
         this.topics = new ConcurrentHashMap<>();
         try {
             this.server = AsynchronousServerSocketChannel.open().bind(new InetSocketAddress(host, port));
-            LOGGER.info("broker started on: " + ((InetSocketAddress) server.getLocalAddress()).getHostName()
-                    + ":" + ((InetSocketAddress) server.getLocalAddress()).getPort());
+            LOGGER.info("broker started on: " + server.getLocalAddress());
             this.isRunning = true;
         } catch (IOException e) {
             LOGGER.error("can't start broker on: " + host + ":" + port + " " + e.getMessage());
@@ -39,8 +39,7 @@ public class Broker {
             @Override
             public void completed(AsynchronousSocketChannel result, Object attachment) {
                 try {
-                    LOGGER.info("connection from: " + ((InetSocketAddress) result.getRemoteAddress()).getHostName()
-                            + ":" + ((InetSocketAddress) result.getRemoteAddress()).getPort());
+                    LOGGER.info("connection from: " + result.getRemoteAddress());
                     if (server.isOpen()) {
                         server.accept(null, this);
                     }
@@ -51,6 +50,7 @@ public class Broker {
                             processRequest(connection, request);
                         }
                     }
+                    LOGGER.info("closing socket channel");
                     result.shutdownInput();
                     result.shutdownOutput();
                     result.close();
@@ -76,7 +76,7 @@ public class Broker {
             byte[] data = pubReq.getData();
             LOGGER.info("publish request. topic: " + topic + ", key: " + key +
                     ", data: " + new String(data, StandardCharsets.UTF_8));
-            processPubReq(topic, key, data);
+            processPubReq(topic, pubReq);
         }
         if (request[0] == Constants.PULL_REQ) {
             PullReq pullReq = new PullReq(request);
@@ -87,27 +87,35 @@ public class Broker {
         }
     }
 
-    private void processPubReq(String topic, String key, byte[] data) {
+    private void processPubReq(String topic, PubReq pubReq) {
         // Reference: https://stackoverflow.com/questions/18605876/concurrent-hashmap-and-copyonwritearraylist
-        CopyOnWriteArrayList<byte[]> copy = topics.get(topic);
+        CopyOnWriteArrayList<PubReq> copy = topics.get(topic);
         if (copy == null) {
             copy = new CopyOnWriteArrayList<>();
-            CopyOnWriteArrayList<byte[]> inMap = topics.putIfAbsent(topic, copy);
+            CopyOnWriteArrayList<PubReq> inMap = topics.putIfAbsent(topic, copy);
             if (inMap != null) {
                 copy = inMap;
             }
         }
-        copy.add(data);
-        LOGGER.info("data added to topic: " + topic);
+        copy.add(pubReq);
+        LOGGER.info("data added to topic: " + topic + ", key: " + pubReq.getKey());
     }
 
     private void processPullReq(Connection connection, String topic, long startingPosition) {
         if (topics.containsKey(topic)) {
-            List<byte[]> list = topics.get(topic);
+            List<PubReq> list = topics.get(topic);
             if (startingPosition < list.size()) {
                 int count = 0;
                 while (startingPosition < list.size() && count < Constants.NUM_RESPONSE) {
-                    connection.send(list.get((int) startingPosition));
+                    PubReq pubReq = list.get((int) startingPosition);
+                    int length = pubReq.getKey().getBytes(StandardCharsets.UTF_8).length + pubReq.getData().length + 10;
+                    ByteBuffer response = ByteBuffer.allocate(length);
+                    response.put((byte) Constants.REQ_RES);
+                    response.putLong(startingPosition);
+                    response.put(pubReq.getKey().getBytes(StandardCharsets.UTF_8));
+                    response.put((byte) 0);
+                    response.put(pubReq.getData());
+                    connection.send(response.array());
                     LOGGER.info("data at: " + startingPosition + " from topic: " + topic + " sent");
                     startingPosition++;
                     count++;
@@ -118,9 +126,9 @@ public class Broker {
 
     public void close() {
         try {
+            LOGGER.info("closing broker");
             isRunning = false;
             server.close();
-            LOGGER.info("closing broker");
         } catch (IOException e) {
             LOGGER.error("close(): " + e.getMessage());
         }

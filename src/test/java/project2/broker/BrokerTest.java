@@ -3,7 +3,6 @@ package project2.broker;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import project2.Constants;
 import project2.consumer.Consumer;
 import project2.producer.Producer;
 
@@ -40,7 +39,9 @@ class BrokerTest {
         while (message == null) {
             message = consumer.poll(100);
         }
-        assertArrayEquals(message, DATA);
+        ReqRes response = new ReqRes(message);
+        assertEquals(response.getKey(), KEY);
+        assertArrayEquals(response.getData(), DATA);
         consumer.close();
     }
 
@@ -113,17 +114,18 @@ class BrokerTest {
 
     private class SimpleConsumer implements Runnable {
         private final int startingPosition;
+
         private SimpleConsumer(int startingPosition) {
             this.startingPosition = startingPosition;
         }
+
         @Override
         public void run() {
             Consumer consumer = new Consumer(HOST, PORT, TOPIC, startingPosition);
             int count = 0;
             while (count < 30 - startingPosition) {
                 byte[] message = consumer.poll(100);
-                if (message != null && !new String(message, StandardCharsets.UTF_8).equals(Constants.INVALID_TOPIC)
-                        && !new String(message, StandardCharsets.UTF_8).equals(Constants.INVALID_STARTING_POSITION)) {
+                if (message != null) {
                     count++;
                 }
             }

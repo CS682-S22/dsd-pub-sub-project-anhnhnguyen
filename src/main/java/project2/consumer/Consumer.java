@@ -58,6 +58,7 @@ public class Consumer {
             socket.setSoTimeout(milliseconds);
             int length = dis.readShort();
             while (length > 0) {
+                LOGGER.info("received message from: " + socket.getRemoteSocketAddress());
                 byte[] message = new byte[length];
                 dis.readFully(message, 0, length);
                 queue.add(message);
