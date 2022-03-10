@@ -76,7 +76,7 @@ public class ProducerDriver {
     }
 
     private static String findKey(String line) {
-        return line.split(" ")[3];
+        return line.split(" ")[4];
     }
 
     private static byte[] findData(String line) {
