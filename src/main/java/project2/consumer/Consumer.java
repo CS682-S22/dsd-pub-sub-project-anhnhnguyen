@@ -38,7 +38,7 @@ public class Consumer {
 
     private void send(String topic, long startingPosition) {
         try {
-            dos.writeShort(topic.length() + 10);
+            dos.writeShort(topic.getBytes(StandardCharsets.UTF_8).length + 10);
             dos.writeByte(Constants.PULL_REQ);
             dos.write(topic.getBytes(StandardCharsets.UTF_8));
             dos.writeByte(0);

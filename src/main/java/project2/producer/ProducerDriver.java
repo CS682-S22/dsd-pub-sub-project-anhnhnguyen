@@ -42,7 +42,7 @@ public class ProducerDriver {
             System.exit(1);
         }
         if (!new File(args[2]).exists()) {
-            LOGGER.error(args[2] + "doesn't exist");
+            LOGGER.error(args[2] + " doesn't exist");
             System.exit(1);
         }
     }
