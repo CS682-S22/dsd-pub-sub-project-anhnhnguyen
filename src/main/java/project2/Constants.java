@@ -13,4 +13,5 @@ public class Constants {
     public static final String TMP_FOLDER = "tmp/";
     public static final String LOG_FOLDER = "log/";
     public static final String FILE_TYPE = ".log";
+    public static final String PATH_STRING = "/";
 }
