@@ -1,6 +1,7 @@
 package project2.consumer;
 
 import org.junit.jupiter.api.Test;
+import project2.Constants;
 
 import java.io.DataOutputStream;
 import java.io.IOException;
@@ -54,7 +55,11 @@ class ConsumerTest {
                 if (socket.getInputStream().read() != -1) {
                     for (int i = 0; i < 100; i++) {
                         Thread.sleep(20);
-                        dos.writeShort("test".getBytes(StandardCharsets.UTF_8).length);
+                        dos.writeShort("key".getBytes(StandardCharsets.UTF_8).length + "test".getBytes(StandardCharsets.UTF_8).length + 10);
+                        dos.writeByte(Constants.REQ_RES);
+                        dos.writeLong(i);
+                        dos.write("key".getBytes(StandardCharsets.UTF_8));
+                        dos.writeByte(0);
                         dos.write("test".getBytes(StandardCharsets.UTF_8));
                     }
                     dos.writeShort(-1);
@@ -69,13 +74,13 @@ class ConsumerTest {
         t.start();
         Consumer consumer = new Consumer("localhost", 1024, "test", 0);
         int count = 0;
-        while (count < 100) {
+        while (count < 56) {
             byte[] message = consumer.poll(10);
             if (message != null) {
                 count++;
             }
         }
-        assertEquals(count, 100);
+        assertEquals(count, 56);
         try {
             t.join();
         } catch (InterruptedException e) {

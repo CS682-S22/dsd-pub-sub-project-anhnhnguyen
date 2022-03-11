@@ -3,6 +3,7 @@ package project2.consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import project2.Constants;
+import project2.broker.ReqRes;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
@@ -62,7 +63,9 @@ public class Consumer {
                 byte[] message = new byte[length];
                 dis.readFully(message, 0, length);
                 queue.add(message);
-                startingPosition++;
+
+                ReqRes response = new ReqRes(message);
+                startingPosition = response.getOffset();
                 length = dis.readShort();
             }
         } catch (SocketTimeoutException e) {

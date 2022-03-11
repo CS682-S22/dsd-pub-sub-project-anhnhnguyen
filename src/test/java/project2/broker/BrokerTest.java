@@ -32,7 +32,9 @@ class BrokerTest {
     @Test
     void testBrokerSimpleValidPubPullReq() {
         Producer producer = new Producer(HOST, PORT);
-        producer.send(TOPIC, KEY, DATA);
+        for (int i = 0; i < 100; i++) {
+            producer.send(TOPIC, KEY, DATA);
+        }
         producer.close();
         Consumer consumer = new Consumer(HOST, PORT, TOPIC, 0);
         byte[] message = consumer.poll(100);
@@ -61,8 +63,8 @@ class BrokerTest {
             fail(e.getMessage());
         }
         p1 = new Thread(new SimpleConsumer(0));
-        p2 = new Thread(new SimpleConsumer(10));
-        p3 = new Thread(new SimpleConsumer(20));
+        p2 = new Thread(new SimpleConsumer(18 * 10));
+        p3 = new Thread(new SimpleConsumer(18 * 20));
         p1.start();
         p2.start();
         p3.start();
@@ -81,8 +83,8 @@ class BrokerTest {
         Thread p2 = new Thread(new SimpleProducer());
         Thread p3 = new Thread(new SimpleProducer());
         Thread c1 = new Thread(new SimpleConsumer(0));
-        Thread c2 = new Thread(new SimpleConsumer(10));
-        Thread c3 = new Thread(new SimpleConsumer(20));
+        Thread c2 = new Thread(new SimpleConsumer(18 * 10));
+        Thread c3 = new Thread(new SimpleConsumer(18 * 20));
         p1.start();
         p2.start();
         p3.start();
@@ -105,7 +107,7 @@ class BrokerTest {
         @Override
         public void run() {
             Producer producer = new Producer(HOST, PORT);
-            for (int i = 0; i < 10; i++) {
+            for (int i = 0; i < 100; i++) {
                 producer.send(TOPIC, KEY, DATA);
             }
             producer.close();
@@ -123,13 +125,13 @@ class BrokerTest {
         public void run() {
             Consumer consumer = new Consumer(HOST, PORT, TOPIC, startingPosition);
             int count = 0;
-            while (count < 30 - startingPosition) {
+            while (count < 30 - startingPosition/18) {
                 byte[] message = consumer.poll(100);
                 if (message != null) {
                     count++;
                 }
             }
-            assertEquals(count, 30 - startingPosition);
+            assertEquals(count, 30 - startingPosition/18);
             consumer.close();
         }
     }
