@@ -3,13 +3,14 @@ package project2.consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import project2.Constants;
-import project2.protos.Message;
+import project2.broker.ReqRes;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedList;
 import java.util.Queue;
 
@@ -17,12 +18,12 @@ public class Consumer {
     private final Logger LOGGER = LoggerFactory.getLogger(Consumer.class);
     private Socket socket;
     private final String topic;
-    private int startingPosition;
+    private long startingPosition;
     private DataInputStream dis;
     private DataOutputStream dos;
     private final Queue<byte[]> queue;
 
-    public Consumer(String host, int port, String topic, int startingPosition) {
+    public Consumer(String host, int port, String topic, long startingPosition) {
         this.topic = topic;
         this.startingPosition = startingPosition;
         this.queue = new LinkedList<>();
@@ -36,17 +37,13 @@ public class Consumer {
         }
     }
 
-    private void send(String topic, int startingPosition) {
-        Message.PullRequest pullReq = Message.PullRequest.newBuilder()
-                .setTopic(topic)
-                .setStartingPosition(startingPosition)
-                .build();
-        Message.Wrapper wrapper = Message.Wrapper.newBuilder()
-                .setPullReq(pullReq)
-                .build();
+    private void send(String topic, long startingPosition) {
         try {
-            dos.writeInt(wrapper.toByteArray().length);
-            dos.write(wrapper.toByteArray());
+            dos.writeShort(topic.getBytes(StandardCharsets.UTF_8).length + 10);
+            dos.writeByte(Constants.PULL_REQ);
+            dos.write(topic.getBytes(StandardCharsets.UTF_8));
+            dos.writeByte(0);
+            dos.writeLong(startingPosition);
             LOGGER.info("pull request sent. topic: " + topic + ", starting position: " + startingPosition);
         } catch (IOException e) {
             LOGGER.error("send(): " + e.getMessage());
@@ -60,17 +57,16 @@ public class Consumer {
         send(topic, startingPosition);
         try {
             socket.setSoTimeout(milliseconds);
-            int length = dis.readInt();
+            int length = dis.readShort();
             while (length > 0) {
+                LOGGER.info("received message from: " + socket.getRemoteSocketAddress());
                 byte[] message = new byte[length];
                 dis.readFully(message, 0, length);
-                if (new String(message).equals(Constants.INVALID_TOPIC) ||
-                        new String(message).equals(Constants.INVALID_STARTING_POSITION) ) {
-                    return message;
-                }
                 queue.add(message);
-                startingPosition++;
-                length = dis.readInt();
+
+                ReqRes response = new ReqRes(message);
+                startingPosition = response.getOffset();
+                length = dis.readShort();
             }
         } catch (SocketTimeoutException e) {
             // do nothing

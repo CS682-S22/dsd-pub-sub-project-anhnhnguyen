@@ -18,8 +18,9 @@ public class ProducerDriver {
             String line;
             while ((line = br.readLine()) != null) {
                 String topic = findTopic(line);
+                String key = findKey(line);
                 byte[] data = findData(line);
-                producer.send(topic, data);
+                producer.send(topic, key, data);
             }
         } catch (IOException e) {
             LOGGER.error(e.getMessage());
@@ -41,7 +42,7 @@ public class ProducerDriver {
             System.exit(1);
         }
         if (!new File(args[2]).exists()) {
-            LOGGER.error(args[2] + "doesn't exist");
+            LOGGER.error(args[2] + " doesn't exist");
             System.exit(1);
         }
     }
@@ -72,6 +73,14 @@ public class ProducerDriver {
             index--;
         }
         return sb.reverse().toString();
+    }
+
+    private static String findKey(String line) {
+        String key = line.split(" ")[4];
+        if (key.isEmpty()) {
+            key = line.split(" ")[5];
+        }
+        return key;
     }
 
     private static byte[] findData(String line) {

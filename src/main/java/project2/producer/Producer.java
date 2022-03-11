@@ -1,9 +1,8 @@
 package project2.producer;
 
-import com.google.protobuf.ByteString;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import project2.protos.Message;
+import project2.Constants;
 
 import java.io.DataOutputStream;
 import java.io.IOException;
@@ -25,18 +24,19 @@ public class Producer {
         }
     }
 
-    public void send(String topic, byte[] data) {
-        Message.PublishRequest pubReq = Message.PublishRequest.newBuilder()
-                .setTopic(topic)
-                .setData(ByteString.copyFrom(data))
-                .build();
-        Message.Wrapper wrapper = Message.Wrapper.newBuilder()
-                .setPubReq(pubReq)
-                .build();
+    public void send(String topic, String key, byte[] data) {
         try {
-            dos.writeInt(wrapper.toByteArray().length);
-            dos.write(wrapper.toByteArray());
-            LOGGER.info("message sent. topic: " + topic + ", data: " + new String(data, StandardCharsets.UTF_8));
+            int length = topic.getBytes(StandardCharsets.UTF_8).length
+                    + key.getBytes(StandardCharsets.UTF_8).length + data.length + 3;
+            dos.writeShort(length);
+            dos.writeByte(Constants.PUB_REQ);
+            dos.write(topic.getBytes(StandardCharsets.UTF_8));
+            dos.writeByte(0);
+            dos.write(key.getBytes(StandardCharsets.UTF_8));
+            dos.writeByte(0);
+            dos.write(data);
+            LOGGER.info("message sent. topic: " + topic + ", key: "
+                    + key + ", data: " + new String(data, StandardCharsets.UTF_8));
         } catch (IOException e) {
             LOGGER.error("send(): " + e.getMessage());
         }
