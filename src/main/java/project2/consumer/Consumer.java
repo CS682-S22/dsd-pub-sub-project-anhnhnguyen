@@ -2,14 +2,11 @@ package project2.consumer;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import project2.Client;
 import project2.Constants;
 import project2.broker.ReqRes;
 
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.net.Socket;
-import java.net.SocketTimeoutException;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedList;
 import java.util.Queue;
@@ -19,15 +16,11 @@ import java.util.Queue;
  *
  * @author anhnguyen
  */
-public class Consumer {
+public class Consumer extends Client {
     /**
      * logger object.
      */
     private final Logger LOGGER = LoggerFactory.getLogger(Consumer.class);
-    /**
-     * socket.
-     */
-    private Socket socket;
     /**
      * topic.
      */
@@ -36,14 +29,6 @@ public class Consumer {
      * starting position.
      */
     private long startingPosition;
-    /**
-     * data input stream.
-     */
-    private DataInputStream dis;
-    /**
-     * data output stream.
-     */
-    private DataOutputStream dos;
     /**
      * the queue to read messages from broker before delivering up to the application.
      */
@@ -58,36 +43,26 @@ public class Consumer {
      * @param startingPosition starting position
      */
     public Consumer(String host, int port, String topic, long startingPosition) {
+        super(host, port);
         this.topic = topic;
         this.startingPosition = startingPosition;
         this.queue = new LinkedList<>();
-        try {
-            this.socket = new Socket(host, port);
-            LOGGER.info("open connection with broker: " + host + ":" + port);
-            this.dis = new DataInputStream(socket.getInputStream());
-            this.dos = new DataOutputStream(socket.getOutputStream());
-        } catch (IOException e) {
-            LOGGER.error("can't open connection with broker: " + host + ":" + port + " " + e.getMessage());
-        }
     }
 
     /**
-     * Method to send request to broker to pull message for the specified topic and starting position.
+     * Method to prepare request to broker to pull message for the specified topic and starting position.
      *
      * @param topic            topic
      * @param startingPosition starting position
+     * @return byte array in the form of [1-byte message type] | [topic] | 0 | [8-byte offset]
      */
-    private void send(String topic, long startingPosition) {
-        try {
-            dos.writeShort(topic.getBytes(StandardCharsets.UTF_8).length + 10);
-            dos.writeByte(Constants.PULL_REQ);
-            dos.write(topic.getBytes(StandardCharsets.UTF_8));
-            dos.writeByte(0);
-            dos.writeLong(startingPosition);
-            LOGGER.info("pull request sent. topic: " + topic + ", starting position: " + startingPosition);
-        } catch (IOException e) {
-            LOGGER.error("send(): " + e.getMessage());
-        }
+    private byte[] prepareRequest(String topic, long startingPosition) {
+        ByteBuffer byteBuffer = ByteBuffer.allocate(topic.getBytes(StandardCharsets.UTF_8).length + 10);
+        byteBuffer.put((byte) Constants.PULL_REQ);
+        byteBuffer.put(topic.getBytes(StandardCharsets.UTF_8));
+        byteBuffer.put((byte) 0);
+        byteBuffer.putLong(startingPosition);
+        return byteBuffer.array();
     }
 
     /**
@@ -100,42 +75,16 @@ public class Consumer {
         if (!queue.isEmpty()) {
             return queue.poll();
         }
-        send(topic, startingPosition);
-        try {
-            socket.setSoTimeout(milliseconds);
-            int length = dis.readShort();
-            while (length > 0) {
-                LOGGER.info("received message from: " + socket.getRemoteSocketAddress());
-                byte[] message = new byte[length];
-                dis.readFully(message, 0, length);
-                queue.add(message);
-
-                ReqRes response = new ReqRes(message);
-                startingPosition = response.getOffset() + response.getKey().getBytes(StandardCharsets.UTF_8).length
-                        + response.getData().length + 1;
-                length = dis.readShort();
-            }
-        } catch (SocketTimeoutException e) {
-            // do nothing
-        } catch (IOException e) {
-            LOGGER.error("poll(): " + e.getMessage());
+        connection.send(prepareRequest(topic, startingPosition));
+        LOGGER.info("pull request sent. topic: " + topic + ", starting position: " + startingPosition);
+        byte[] message = connection.receive(milliseconds);
+        while (message != null) {
+            queue.add(message);
+            ReqRes response = new ReqRes(message);
+            startingPosition = response.getOffset() + response.getKey().getBytes(StandardCharsets.UTF_8).length
+                    + response.getData().length + 1;
+            message = connection.receive(milliseconds);
         }
         return queue.poll();
-    }
-
-    /**
-     * Method to close consumer.
-     */
-    public void close() {
-        try {
-            socket.shutdownInput();
-            socket.shutdownOutput();
-            socket.close();
-            dis.close();
-            dos.close();
-            LOGGER.info("closing consumer");
-        } catch (IOException e) {
-            LOGGER.error("closer(): " + e.getMessage());
-        }
     }
 }

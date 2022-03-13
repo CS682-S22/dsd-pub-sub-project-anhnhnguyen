@@ -26,10 +26,6 @@ public class ConsumerDriver {
      * state of the driver.
      */
     private static volatile boolean isRunning = true;
-    /**
-     * polling interval.
-     */
-    private static final int TIME_OUT = 100;
 
     /**
      * Main program for consumer to start a thread to pull message from consumer until user asks to exit.
@@ -68,7 +64,7 @@ public class ConsumerDriver {
     private static void request(Consumer consumer, Config config) {
         try (BufferedWriter bw = new BufferedWriter(new FileWriter(config.getTopic() + Constants.FILE_TYPE))) {
             while (isRunning) {
-                byte[] data = consumer.poll(TIME_OUT);
+                byte[] data = consumer.poll(Constants.TIME_OUT);
                 if (data != null) {
                     ReqRes response = new ReqRes(data);
                     bw.write(response.getKey() + " "
