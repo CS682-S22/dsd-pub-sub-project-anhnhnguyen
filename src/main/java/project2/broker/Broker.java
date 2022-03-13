@@ -2,6 +2,7 @@ package project2.broker;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import project2.Connection;
 import project2.Constants;
 import project2.consumer.PullReq;
 import project2.producer.PubReq;
@@ -122,7 +123,7 @@ public class Broker {
                     }
                     Connection connection = new Connection(result);
                     while (isRunning) {
-                        byte[] request = connection.receive();
+                        byte[] request = connection.receive(Constants.TIME_OUT);
                         if (request != null) {
                             processRequest(connection, request);
                         }

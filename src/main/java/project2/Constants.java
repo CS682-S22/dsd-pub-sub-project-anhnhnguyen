@@ -58,4 +58,8 @@ public class Constants {
      * path string.
      */
     public static final String PATH_STRING = "/";
+    /**
+     * timeout interval.
+     */
+    public static final int TIME_OUT = 100;
 }

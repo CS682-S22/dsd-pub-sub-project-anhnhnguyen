@@ -1,8 +1,7 @@
-package project2.broker;
+package project2;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import project2.Constants;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -59,9 +58,10 @@ public class Connection {
     /**
      * Method to read message from remote host.
      *
+     * @param milliseconds timeout
      * @return byte array of the message
      */
-    public byte[] receive() {
+    public byte[] receive(int milliseconds) {
         if (!messages.isEmpty()) {
             return messages.poll();
         }
@@ -70,7 +70,7 @@ public class Connection {
                 readResult = socketChannel.read(buffer);
             }
             try {
-                if (readResult.get(500, TimeUnit.MILLISECONDS) != -1 && readResult.isDone()) {
+                if (readResult.get(milliseconds, TimeUnit.MILLISECONDS) != -1 && readResult.isDone()) {
                     LOGGER.info("received message from: " + socketChannel.getRemoteAddress());
                     readResult = null;
                     int size = buffer.position();
