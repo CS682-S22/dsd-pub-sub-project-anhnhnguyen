@@ -66,13 +66,7 @@ public class ConsumerDriver {
      * @param config   config
      */
     private static void request(Consumer consumer, Config config) {
-        String fileName = config.getTopic() + Constants.FILE_TYPE;
-        File file = new File(fileName);
-        if (file.exists() && !file.delete()) {
-            LOGGER.error("can't delete file: " + fileName);
-        }
-        try (BufferedWriter bw = new BufferedWriter(new FileWriter(config.getTopic()
-                + Constants.FILE_TYPE, true))) {
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(config.getTopic() + Constants.FILE_TYPE))) {
             while (isRunning) {
                 byte[] data = consumer.poll(TIME_OUT);
                 if (data != null) {

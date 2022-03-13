@@ -299,20 +299,23 @@ public class Broker {
                 if (index >= 0) {
                     int count = 0;
                     while (index < offSetList.size() - 1 && count < Constants.NUM_RESPONSE) {
-
+                        long offset = offSetList.get(index);
                         // search for the file that has the offset, binarySearch method include insertionPoint which is
                         // the index where the number would be put in if it doesn't find the number. So for this application
                         // return the lower index because that's where the byte offset would be.
-                        int fileIndex = Arrays.binarySearch(startingOffsetList.toArray(), offSetList.get(index));
+                        int fileIndex = Arrays.binarySearch(startingOffsetList.toArray(), offset);
                         if (fileIndex < 0) {
                             fileIndex = -(fileIndex + 1) - 1;
                         }
                         String fileName = Constants.LOG_FOLDER + topic + Constants.PATH_STRING + startingOffsetList.get(fileIndex) + Constants.FILE_TYPE;
                         // only expose to consumer when data is flushed to disk, so need to check the log/ folder
                         if (Files.exists(Paths.get(fileName))) {
-                            if (sendData(offSetList, startingOffsetList, index, fileIndex, fileName, connection, topic)) {
+                            long length = offSetList.get(index + 1) - offSetList.get(index);
+                            long position = offSetList.get(index) - startingOffsetList.get(fileIndex);
+                            if (sendData(fileName, connection, (int) length, (int) position, offset)) {
                                 index++;
                                 count++;
+                                LOGGER.info("data at offset: " + offset + " from topic: " + topic + " sent");
                             }
                         } else {
                             break;
@@ -325,30 +328,24 @@ public class Broker {
 
     /**
      * Method to send data to consumer via connection by looking up the position of data in file and read data length.
-     *
-     * @param offSetList         offset list
-     * @param startingOffsetList starting offset list
-     * @param index              index of offset in the offset list
-     * @param fileIndex          index of file in the starting offset list
-     * @param connection         connection
-     * @param topic              topic
+     * @param fileName file that has the message
+     * @param connection connection
+     * @param length length of message
+     * @param position position of message
+     * @param offset offset of message
      * @return true if data is sent, else false
      */
-    private boolean sendData(CopyOnWriteArrayList<Long> offSetList, CopyOnWriteArrayList<Long> startingOffsetList,
-                             int index, int fileIndex, String fileName, Connection connection, String topic) {
-        long length = offSetList.get(index + 1) - offSetList.get(index);
-        byte[] data = new byte[(int) length];
-        long position = offSetList.get(index) - startingOffsetList.get(fileIndex);
+    private boolean sendData(String fileName, Connection connection, int length, int position, long offset) {
+        byte[] data = new byte[length];
         try {
             raf = new RandomAccessFile(fileName, "r");
             raf.seek(position);
             raf.read(data);
-            ByteBuffer response = ByteBuffer.allocate((int) length + 9);
+            ByteBuffer response = ByteBuffer.allocate(length + 9);
             response.put((byte) Constants.REQ_RES);
-            response.putLong(offSetList.get(index));
+            response.putLong(offset);
             response.put(data);
             connection.send(response.array());
-            LOGGER.info("data at offset: " + offSetList.get(index) + " from topic: " + topic + " sent");
             return true;
         } catch (IOException e) {
             LOGGER.error(e.getMessage());
