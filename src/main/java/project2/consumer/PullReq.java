@@ -1,45 +1,55 @@
 package project2.consumer;
 
-import project2.Constants;
+import project2.Utils;
 
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 
+/**
+ * Class that extracts byte array from consumer to broker into object with topic and starting position.
+ *
+ * @author anhnguyen
+ */
 public class PullReq {
+    /**
+     * topic.
+     */
     private final String topic;
+    /**
+     * starting position.
+     */
     private final long startingPosition;
 
+    /**
+     * Constructor.
+     * <p>
+     * Extracting byte array in the form of [1-byte message type] | [topic] | 0 | [8-byte offset]
+     *
+     * @param message byte array
+     */
     public PullReq(byte[] message) {
-        int i = 1;
-        int j = 0;
-
-        byte[] tmp = new byte[Constants.BYTE_ALLOCATION];
-        while (i < message.length && message[i] != 0) {
-            tmp[j] = message[i];
-            i++;
-            j++;
-        }
-        byte[] topicBytes = new byte[j];
-        System.arraycopy(tmp, 0, topicBytes, 0, j);
+        int index = 1;
+        byte[] topicBytes = Utils.extractBytes(index, message.length, message, true);
         this.topic = new String(topicBytes, StandardCharsets.UTF_8);
 
-        tmp = new byte[Constants.BYTE_ALLOCATION];
-        i++;
-        j = 0;
-        while (i < message.length) {
-            tmp[j] = message[i];
-            i++;
-            j++;
-        }
-        byte[] positionBytes = new byte[j];
-        System.arraycopy(tmp, 0, positionBytes, 0, j);
-        this.startingPosition = new BigInteger(positionBytes).longValue();
+        index += topicBytes.length + 1;
+        this.startingPosition = new BigInteger(Utils.extractBytes(index, message.length, message, false)).longValue();
     }
 
+    /**
+     * Getter for topic.
+     *
+     * @return topic
+     */
     public String getTopic() {
         return topic;
     }
 
+    /**
+     * Getter for starting position.
+     *
+     * @return starting position
+     */
     public long getStartingPosition() {
         return startingPosition;
     }

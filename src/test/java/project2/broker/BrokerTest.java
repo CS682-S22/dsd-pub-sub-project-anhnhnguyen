@@ -37,13 +37,17 @@ class BrokerTest {
         }
         producer.close();
         Consumer consumer = new Consumer(HOST, PORT, TOPIC, 0);
-        byte[] message = consumer.poll(100);
-        while (message == null) {
-            message = consumer.poll(100);
+        int count = 0;
+        while (count < 56) {
+            byte[] message = consumer.poll(100);
+            if (message != null) {
+                ReqRes response = new ReqRes(message);
+                assertEquals(response.getKey(), KEY);
+                assertArrayEquals(response.getData(), DATA);
+                count++;
+            }
         }
-        ReqRes response = new ReqRes(message);
-        assertEquals(response.getKey(), KEY);
-        assertArrayEquals(response.getData(), DATA);
+        assertEquals(count, 56);
         consumer.close();
     }
 
@@ -125,13 +129,13 @@ class BrokerTest {
         public void run() {
             Consumer consumer = new Consumer(HOST, PORT, TOPIC, startingPosition);
             int count = 0;
-            while (count < 30 - startingPosition/18) {
+            while (count < 30 - startingPosition / 18) {
                 byte[] message = consumer.poll(100);
                 if (message != null) {
                     count++;
                 }
             }
-            assertEquals(count, 30 - startingPosition/18);
+            assertEquals(count, 30 - startingPosition / 18);
             consumer.close();
         }
     }

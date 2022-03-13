@@ -9,11 +9,31 @@ import java.io.IOException;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 
+/**
+ * Class that sends message to broker.
+ *
+ * @author anhnguyen
+ */
 public class Producer {
+    /**
+     * logger object.
+     */
     private final Logger LOGGER = LoggerFactory.getLogger(Producer.class);
+    /**
+     * socket.
+     */
     private Socket socket;
+    /**
+     * data output stream.
+     */
     private DataOutputStream dos;
 
+    /**
+     * Constructor.
+     *
+     * @param host host
+     * @param port port
+     */
     public Producer(String host, int port) {
         try {
             this.socket = new Socket(host, port);
@@ -24,6 +44,13 @@ public class Producer {
         }
     }
 
+    /**
+     * method to publish topic, key, and data to broker.
+     *
+     * @param topic topic
+     * @param key   key
+     * @param data  data
+     */
     public void send(String topic, String key, byte[] data) {
         try {
             int length = topic.getBytes(StandardCharsets.UTF_8).length
@@ -42,6 +69,9 @@ public class Producer {
         }
     }
 
+    /**
+     * method to close producer.
+     */
     public void close() {
         try {
             socket.shutdownInput();

@@ -122,7 +122,7 @@ public class Connection {
                 LOGGER.info("sent message to: " + socketChannel.getRemoteAddress());
             }
         } catch (InterruptedException | ExecutionException | IOException e) {
-            LOGGER.error("send(byte[] message): " + e.getMessage());
+            LOGGER.error("send(): " + e.getMessage());
         }
     }
 }

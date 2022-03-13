@@ -45,10 +45,6 @@ public class Broker {
      */
     private final ConcurrentHashMap<String, CopyOnWriteArrayList<CopyOnWriteArrayList<Long>>> topics;
     /**
-     * file output stream.
-     */
-    private FileOutputStream fos;
-    /**
      * random access file.
      */
     private RandomAccessFile raf;
@@ -209,13 +205,16 @@ public class Broker {
         long currentFile = indexes.get(Constants.STARTING_OFFSET_INDEX).get(indexes.get(Constants.STARTING_OFFSET_INDEX).size() - 1);
         if (offset - currentFile > Constants.SEGMENT_SIZE) {
             initializeSegmentFile(topic, currentFile, indexes, current);
+            currentFile = current;
         }
 
         // write key and data to file
-        try {
+        String activeFile = Constants.TMP_FOLDER + topic + Constants.PATH_STRING + currentFile + Constants.FILE_TYPE;
+        try (FileOutputStream fos = new FileOutputStream(activeFile, true)) {
             fos.write(pubReq.getKey().getBytes(StandardCharsets.UTF_8));
             fos.write(0);
             fos.write(pubReq.getData());
+            fos.flush();
         } catch (IOException e) {
             LOGGER.error("processPubReq(): " + e.getMessage());
         }
@@ -247,13 +246,7 @@ public class Broker {
 
         // initialize the file output stream to write to the specific file
         String fileName = folder + "0" + Constants.FILE_TYPE;
-        File file = new File(fileName);
-        try {
-            fos = new FileOutputStream(file, true);
-            LOGGER.info("start writing to segment file: " + fileName);
-        } catch (IOException e) {
-            LOGGER.error("initializeTopic(): " + e.getMessage());
-        }
+        LOGGER.info("start writing to segment file: " + fileName);
     }
 
     /**
@@ -275,8 +268,6 @@ public class Broker {
                     + Constants.FILE_TYPE).toPath(), permFile.toPath());
             LOGGER.info("flushed segment file: " + permFile.toPath());
             String fileName = Constants.TMP_FOLDER + topic + Constants.PATH_STRING + current + Constants.FILE_TYPE;
-            File file = new File(fileName);
-            fos = new FileOutputStream(file, true);
             LOGGER.info("start writing to segment file: " + fileName);
             indexes.get(Constants.STARTING_OFFSET_INDEX).add(current);
         } catch (IOException e) {
@@ -312,30 +303,16 @@ public class Broker {
                         // search for the file that has the offset, binarySearch method include insertionPoint which is
                         // the index where the number would be put in if it doesn't find the number. So for this application
                         // return the lower index because that's where the byte offset would be.
-                        int fileIndex = Arrays.binarySearch(startingOffsetList.toArray(), startingPosition);
+                        int fileIndex = Arrays.binarySearch(startingOffsetList.toArray(), offSetList.get(index));
                         if (fileIndex < 0) {
                             fileIndex = -(fileIndex + 1) - 1;
                         }
-
+                        String fileName = Constants.LOG_FOLDER + topic + Constants.PATH_STRING + startingOffsetList.get(fileIndex) + Constants.FILE_TYPE;
                         // only expose to consumer when data is flushed to disk, so need to check the log/ folder
-                        if (Files.exists(Paths.get(Constants.LOG_FOLDER + topic + Constants.PATH_STRING + fileIndex + ".log"))) {
-                            long length = offSetList.get(index + 1) - offSetList.get(index);
-                            byte[] data = new byte[(int) length];
-                            long position = offSetList.get(index) - startingOffsetList.get(fileIndex);
-                            try {
-                                raf = new RandomAccessFile(Constants.LOG_FOLDER + topic + Constants.PATH_STRING + fileIndex + ".log", "r");
-                                raf.seek(position);
-                                raf.read(data);
-                                ByteBuffer response = ByteBuffer.allocate((int) length + 9);
-                                response.put((byte) Constants.REQ_RES);
-                                response.putLong(offSetList.get(index));
-                                response.put(data);
-                                connection.send(response.array());
-                                LOGGER.info("data at offset: " + offSetList.get(index) + " from topic: " + topic + " sent");
+                        if (Files.exists(Paths.get(fileName))) {
+                            if (sendData(offSetList, startingOffsetList, index, fileIndex, fileName, connection, topic)) {
                                 index++;
                                 count++;
-                            } catch (IOException e) {
-                                LOGGER.error(e.getMessage());
                             }
                         } else {
                             break;
@@ -347,6 +324,39 @@ public class Broker {
     }
 
     /**
+     * Method to send data to consumer via connection by looking up the position of data in file and read data length.
+     *
+     * @param offSetList         offset list
+     * @param startingOffsetList starting offset list
+     * @param index              index of offset in the offset list
+     * @param fileIndex          index of file in the starting offset list
+     * @param connection         connection
+     * @param topic              topic
+     * @return true if data is sent, else false
+     */
+    private boolean sendData(CopyOnWriteArrayList<Long> offSetList, CopyOnWriteArrayList<Long> startingOffsetList,
+                             int index, int fileIndex, String fileName, Connection connection, String topic) {
+        long length = offSetList.get(index + 1) - offSetList.get(index);
+        byte[] data = new byte[(int) length];
+        long position = offSetList.get(index) - startingOffsetList.get(fileIndex);
+        try {
+            raf = new RandomAccessFile(fileName, "r");
+            raf.seek(position);
+            raf.read(data);
+            ByteBuffer response = ByteBuffer.allocate((int) length + 9);
+            response.put((byte) Constants.REQ_RES);
+            response.putLong(offSetList.get(index));
+            response.put(data);
+            connection.send(response.array());
+            LOGGER.info("data at offset: " + offSetList.get(index) + " from topic: " + topic + " sent");
+            return true;
+        } catch (IOException e) {
+            LOGGER.error(e.getMessage());
+        }
+        return false;
+    }
+
+    /**
      * Method to close the broker.
      */
     public void close() {
@@ -355,7 +365,6 @@ public class Broker {
             isRunning = false;
             server.close();
             raf.close();
-            fos.close();
         } catch (IOException e) {
             LOGGER.error("close(): " + e.getMessage());
         }
