@@ -18,9 +18,7 @@ import java.nio.channels.CompletionHandler;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.Arrays;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.*;
 
 /**
  * Class that listens to request to publish message from Producer and request to pull message from Consumer.
@@ -43,7 +41,7 @@ public class Broker {
     /**
      * a hashmap that maps topic to a list of offsets in the topic and a list of first offset in segment files.
      */
-    private final ConcurrentHashMap<String, CopyOnWriteArrayList<CopyOnWriteArrayList<Long>>> topics;
+    private final Map<String, List<List<Long>>> topics;
     /**
      * random access file.
      */
@@ -57,7 +55,7 @@ public class Broker {
      * @param port port number
      */
     public Broker(String host, int port) {
-        this.topics = new ConcurrentHashMap<>();
+        this.topics = new HashMap<>();
         try {
             this.server = AsynchronousServerSocketChannel.open().bind(new InetSocketAddress(host, port));
             LOGGER.info("broker started on: " + server.getLocalAddress());
@@ -184,11 +182,11 @@ public class Broker {
      * @param pubReq publish request
      */
     private synchronized void processPubReq(String topic, PubReq pubReq) {
-        CopyOnWriteArrayList<CopyOnWriteArrayList<Long>> indexes;
+        List<List<Long>> indexes;
         if (topics.containsKey(topic)) {
             indexes = topics.get(topic);
         } else {
-            indexes = new CopyOnWriteArrayList<>();
+            indexes = new ArrayList<>();
             topics.put(topic, indexes);
         }
 
@@ -229,18 +227,18 @@ public class Broker {
      * @param indexes the list linked with the topic
      * @param topic   the topic
      */
-    private synchronized void initializeTopic(CopyOnWriteArrayList<CopyOnWriteArrayList<Long>> indexes, String topic) {
+    private void initializeTopic(List<List<Long>> indexes, String topic) {
         // create tmp folder for the topic
         String folder = Constants.TMP_FOLDER + topic + Constants.PATH_STRING;
         createFolder(folder);
 
         // initialize the offset list for the topic
-        CopyOnWriteArrayList<Long> offsetList = new CopyOnWriteArrayList<>();
+        List<Long> offsetList = new ArrayList<>();
         offsetList.add((long) 0);
         indexes.add(offsetList);
 
         // initialize the starting offset list for the topic
-        CopyOnWriteArrayList<Long> startingOffsetList = new CopyOnWriteArrayList<>();
+        List<Long> startingOffsetList = new ArrayList<>();
         startingOffsetList.add((long) 0);
         indexes.add(startingOffsetList);
 
@@ -258,13 +256,12 @@ public class Broker {
      * @param indexes     indexes mapped to the topic
      * @param current     current offset
      */
-    private synchronized void initializeSegmentFile(String topic, long currentFile,
-                                                    CopyOnWriteArrayList<CopyOnWriteArrayList<Long>> indexes, long current) {
+    private void initializeSegmentFile(String topic, long currentFile, List<List<Long>> indexes, long current) {
         try {
             String folder = Constants.LOG_FOLDER + topic + Constants.PATH_STRING;
             createFolder(folder);
             File permFile = new File(folder + currentFile + Constants.FILE_TYPE);
-            Files.copy(new File(Constants.TMP_FOLDER + topic + Constants.PATH_STRING + currentFile
+            Files.move(new File(Constants.TMP_FOLDER + topic + Constants.PATH_STRING + currentFile
                     + Constants.FILE_TYPE).toPath(), permFile.toPath());
             LOGGER.info("flushed segment file: " + permFile.toPath());
             String fileName = Constants.TMP_FOLDER + topic + Constants.PATH_STRING + current + Constants.FILE_TYPE;
@@ -285,16 +282,20 @@ public class Broker {
      */
     private void processPullReq(Connection connection, String topic, long startingPosition) {
         if (topics.containsKey(topic)) {
-            CopyOnWriteArrayList<CopyOnWriteArrayList<Long>> list = topics.get(topic);
+            List<List<Long>> list = topics.get(topic);
             if (list.size() == 2) {
-                CopyOnWriteArrayList<Long> offSetList = list.get(Constants.OFFSET_INDEX);
-                CopyOnWriteArrayList<Long> startingOffsetList = list.get(Constants.STARTING_OFFSET_INDEX);
+                List<Long> offSetList = list.get(Constants.OFFSET_INDEX);
+                List<Long> startingOffsetList = list.get(Constants.STARTING_OFFSET_INDEX);
 
                 // search for the index of the offset in the offset list, excluding the last index because it belongs to the
                 // future message
                 int index = Arrays.binarySearch(offSetList.toArray(), startingPosition);
                 if (index == offSetList.size() - 1) {
                     index = -1;
+                } else if (index < 0 && startingPosition < offSetList.get(offSetList.size() - 1)) {
+                    // if consumer sends a starting position that is not in the list,
+                    // round it down to the nearest offset (for testing purpose to make sure starting position works)
+                    index = -(index + 1) - 1;
                 }
                 if (index >= 0) {
                     int count = 0;
@@ -328,11 +329,12 @@ public class Broker {
 
     /**
      * Method to send data to consumer via connection by looking up the position of data in file and read data length.
-     * @param fileName file that has the message
+     *
+     * @param fileName   file that has the message
      * @param connection connection
-     * @param length length of message
-     * @param position position of message
-     * @param offset offset of message
+     * @param length     length of message
+     * @param position   position of message
+     * @param offset     offset of message
      * @return true if data is sent, else false
      */
     private boolean sendData(String fileName, Connection connection, int length, int position, long offset) {

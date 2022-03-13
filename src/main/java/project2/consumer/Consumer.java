@@ -111,7 +111,7 @@ public class Consumer {
                 queue.add(message);
 
                 ReqRes response = new ReqRes(message);
-                startingPosition += response.getKey().getBytes(StandardCharsets.UTF_8).length
+                startingPosition = response.getOffset() + response.getKey().getBytes(StandardCharsets.UTF_8).length
                         + response.getData().length + 1;
                 length = dis.readShort();
             }
