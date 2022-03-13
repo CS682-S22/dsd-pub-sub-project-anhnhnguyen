@@ -2,34 +2,25 @@ package project2.consumer;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import project2.Client;
 import project2.Constants;
-import project2.Connection;
 import project2.broker.ReqRes;
 
-import java.io.IOException;
-import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
-import java.nio.channels.AsynchronousSocketChannel;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedList;
 import java.util.Queue;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
 
 /**
  * Class that pulls message from the Broker by specifying topic and starting position to pull.
  *
  * @author anhnguyen
  */
-public class Consumer {
+public class Consumer extends Client {
     /**
      * logger object.
      */
     private final Logger LOGGER = LoggerFactory.getLogger(Consumer.class);
-    /**
-     * socket.
-     */
-    private AsynchronousSocketChannel socket;
     /**
      * topic.
      */
@@ -42,30 +33,20 @@ public class Consumer {
      * the queue to read messages from broker before delivering up to the application.
      */
     private final Queue<byte[]> queue;
-    /**
-     * connection object.
-     */
-    private final Connection connection;
 
     /**
      * Constructor.
      *
+     * @param host             host
+     * @param port             port
      * @param topic            topic
      * @param startingPosition starting position
      */
     public Consumer(String host, int port, String topic, long startingPosition) {
-        try {
-            this.socket = AsynchronousSocketChannel.open();
-            Future<Void> future = socket.connect(new InetSocketAddress(host, port));
-            future.get();
-            LOGGER.info("opening socket channel connecting with: " + host + ":" + port);
-        } catch (IOException | ExecutionException | InterruptedException e) {
-            LOGGER.error("can't open socket channel");
-        }
+        super(host, port);
         this.topic = topic;
         this.startingPosition = startingPosition;
         this.queue = new LinkedList<>();
-        this.connection = new Connection(socket);
     }
 
     /**
@@ -105,19 +86,5 @@ public class Consumer {
             message = connection.receive(milliseconds);
         }
         return queue.poll();
-    }
-
-    /**
-     * Method to close consumer.
-     */
-    public void close() {
-        try {
-            socket.shutdownOutput();
-            socket.shutdownInput();
-            socket.close();
-            LOGGER.info("closing consumer");
-        } catch (IOException e) {
-            LOGGER.error("closer(): " + e.getMessage());
-        }
     }
 }
