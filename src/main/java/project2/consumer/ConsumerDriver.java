@@ -80,7 +80,7 @@ public class ConsumerDriver {
      * @param suffix   suffix
      */
     private static void request(Consumer consumer, Config config, int suffix) {
-        try (BufferedWriter bw = new BufferedWriter(new FileWriter(config.getTopic() + Constants.FILE_TYPE))) {
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(config.getTopic() + suffix + Constants.FILE_TYPE))) {
             while (isRunning) {
                 byte[] data = consumer.poll(Constants.TIME_OUT);
                 if (data != null) {
