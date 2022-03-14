@@ -24,6 +24,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Class that listens to request to publish message from Producer and request to pull message from Consumer.
@@ -57,6 +60,11 @@ public class Broker {
     private final BrokerRegister brokerRegister;
 
     /**
+     * lock map for topics.
+     */
+    private final Map<String, Lock> locks;
+
+    /**
      * Start the broker to listen on the given host name and port number. Also delete old log files
      * and create new folder (if necessary) at initialization (for testing purpose).
      *
@@ -68,6 +76,7 @@ public class Broker {
      */
     public Broker(String host, int port, int partition, CuratorFramework curatorFramework, ObjectMapper objectMapper) {
         this.topics = new HashMap<>();
+        this.locks = new ConcurrentHashMap<>();
         try {
             this.server = AsynchronousServerSocketChannel.open().bind(new InetSocketAddress(host, port));
             LOGGER.info("broker started on: " + server.getLocalAddress());
@@ -196,44 +205,52 @@ public class Broker {
      *
      * @param topic  topic
      * @param pubReq publish request
+     *
+     * Reference for locking on certain topic: https://stackoverflow.com/questions/71007235/java-synchronized-on-the-same-file-but-not-different
      */
-    private synchronized void processPubReq(String topic, PubReq pubReq) {
-        List<List<Long>> indexes;
-        if (topics.containsKey(topic)) {
-            indexes = topics.get(topic);
-        } else {
-            indexes = new ArrayList<>();
-            topics.put(topic, indexes);
+    private void processPubReq(String topic, PubReq pubReq) {
+        Lock lock = locks.computeIfAbsent(topic, t -> new ReentrantLock());
+        lock.lock();
+        try {
+            List<List<Long>> indexes;
+            if (topics.containsKey(topic)) {
+                indexes = topics.get(topic);
+            } else {
+                indexes = new ArrayList<>();
+                topics.put(topic, indexes);
+            }
+
+            if (indexes.size() == 0) {
+                initializeTopic(indexes, topic);
+            }
+
+            // add next message's id to the offset list
+            long current = indexes.get(Constants.OFFSET_INDEX).get(indexes.get(Constants.OFFSET_INDEX).size() - 1);
+            long offset = current + pubReq.getData().length + pubReq.getKey().getBytes(StandardCharsets.UTF_8).length + 1;
+            indexes.get(Constants.OFFSET_INDEX).add(offset);
+
+            // create new segment file if necessary and add the current offset to the list of starting offsets
+            long currentFile = indexes.get(Constants.STARTING_OFFSET_INDEX).get(indexes.get(Constants.STARTING_OFFSET_INDEX).size() - 1);
+            if (offset - currentFile > Constants.SEGMENT_SIZE) {
+                initializeSegmentFile(topic, currentFile, indexes, current);
+                currentFile = current;
+            }
+
+            // write key and data to file
+            String activeFile = Constants.TMP_FOLDER + topic + Constants.PATH_STRING + currentFile + Constants.FILE_TYPE;
+            try (FileOutputStream fos = new FileOutputStream(activeFile, true)) {
+                fos.write(pubReq.getKey().getBytes(StandardCharsets.UTF_8));
+                fos.write(0);
+                fos.write(pubReq.getData());
+                fos.flush();
+            } catch (IOException e) {
+                LOGGER.error("processPubReq(): " + e.getMessage());
+            }
+
+            LOGGER.info("data added to topic: " + topic + ", key: " + pubReq.getKey() + ", offset: " + current);
+        } finally {
+            lock.unlock();
         }
-
-        if (indexes.size() == 0) {
-            initializeTopic(indexes, topic);
-        }
-
-        // add next message's id to the offset list
-        long current = indexes.get(Constants.OFFSET_INDEX).get(indexes.get(Constants.OFFSET_INDEX).size() - 1);
-        long offset = current + pubReq.getData().length + pubReq.getKey().getBytes(StandardCharsets.UTF_8).length + 1;
-        indexes.get(Constants.OFFSET_INDEX).add(offset);
-
-        // create new segment file if necessary and add the current offset to the list of starting offsets
-        long currentFile = indexes.get(Constants.STARTING_OFFSET_INDEX).get(indexes.get(Constants.STARTING_OFFSET_INDEX).size() - 1);
-        if (offset - currentFile > Constants.SEGMENT_SIZE) {
-            initializeSegmentFile(topic, currentFile, indexes, current);
-            currentFile = current;
-        }
-
-        // write key and data to file
-        String activeFile = Constants.TMP_FOLDER + topic + Constants.PATH_STRING + currentFile + Constants.FILE_TYPE;
-        try (FileOutputStream fos = new FileOutputStream(activeFile, true)) {
-            fos.write(pubReq.getKey().getBytes(StandardCharsets.UTF_8));
-            fos.write(0);
-            fos.write(pubReq.getData());
-            fos.flush();
-        } catch (IOException e) {
-            LOGGER.error("processPubReq(): " + e.getMessage());
-        }
-
-        LOGGER.info("data added to topic: " + topic + ", key: " + pubReq.getKey() + ", offset: " + current);
     }
 
     /**

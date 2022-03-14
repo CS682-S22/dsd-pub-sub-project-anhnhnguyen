@@ -125,10 +125,6 @@ public class Config {
      * Method to validate configs.
      */
     public void validate() {
-        if (host == null || port < 1150 || port > 1174) {
-            System.err.println("need to specify host name and port needs to be between 1150 and 1174");
-            System.exit(1);
-        }
         if (file != null) {
             File f = new File(file);
             if (!f.exists()) {
