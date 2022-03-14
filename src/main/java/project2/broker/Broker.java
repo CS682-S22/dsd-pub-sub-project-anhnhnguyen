@@ -305,7 +305,7 @@ public class Broker {
                 Thread t = new Thread(() -> {
                     List<Connection> connections = subscribers.get(topic);
                     for (Connection connection : connections) {
-                        sendToSubscriber(permFile.getName(), currentFile, topic, connection);
+                        sendToSubscriber(permFile.getPath(), currentFile, topic, connection);
                     }
                 });
                 t.start();

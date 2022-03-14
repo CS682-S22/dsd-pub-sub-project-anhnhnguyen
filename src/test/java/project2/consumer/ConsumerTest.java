@@ -52,15 +52,17 @@ class ConsumerTest {
                 ServerSocket serverSocket = new ServerSocket(1024);
                 Socket socket = serverSocket.accept();
                 DataOutputStream dos = new DataOutputStream(socket.getOutputStream());
+                long offset = 0;
                 if (socket.getInputStream().read() != -1) {
                     for (int i = 0; i < 100; i++) {
                         Thread.sleep(20);
                         dos.writeShort("key".getBytes(StandardCharsets.UTF_8).length + "test".getBytes(StandardCharsets.UTF_8).length + 10);
                         dos.writeByte(Constants.REQ_RES);
-                        dos.writeLong(i);
+                        dos.writeLong(offset);
                         dos.write("key".getBytes(StandardCharsets.UTF_8));
                         dos.writeByte(0);
                         dos.write("test".getBytes(StandardCharsets.UTF_8));
+                        offset += "key".getBytes(StandardCharsets.UTF_8).length + "test".getBytes(StandardCharsets.UTF_8).length + 1;
                     }
                     dos.writeShort(-1);
                 }

@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousSocketChannel;
+import java.nio.channels.WritePendingException;
 import java.util.LinkedList;
 import java.util.Queue;
 import java.util.concurrent.ExecutionException;
@@ -123,6 +124,8 @@ public class Connection {
             }
         } catch (InterruptedException | ExecutionException | IOException e) {
             LOGGER.error("send(): " + e.getMessage());
+        } catch (WritePendingException e) {
+            send(message);
         }
     }
 }

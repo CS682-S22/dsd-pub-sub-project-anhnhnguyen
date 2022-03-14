@@ -69,6 +69,9 @@ public class Consumer extends Client {
         byte[] message = connection.receive(milliseconds);
         if (message != null) {
             ReqRes response = new ReqRes(message);
+            if (response.getOffset() < startingPosition) {
+                return null;
+            }
             startingPosition = response.getOffset() + response.getKey().getBytes(StandardCharsets.UTF_8).length
                     + response.getData().length + 1;
         } else {

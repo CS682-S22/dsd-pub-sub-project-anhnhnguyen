@@ -83,7 +83,8 @@ public class ConsumerDriver {
                     ReqRes response = new ReqRes(data);
                     bw.write(response.getKey() + " "
                             + new String(response.getData(), StandardCharsets.UTF_8) + "\n");
-                    LOGGER.info("write to file: " + config.getTopic() + suffix + Constants.FILE_TYPE);
+                    bw.flush();
+                    LOGGER.info("write to file: " + config.getTopic() + suffix + Constants.FILE_TYPE + ", offset: " + response.getOffset());
                 }
             }
         } catch (IOException e) {
