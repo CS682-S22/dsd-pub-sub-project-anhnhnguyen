@@ -68,29 +68,34 @@ class BrokerTest {
 
     @Test
     void testMultiplePubPullReq() {
-        Thread p1 = new Thread(new SimpleProducer());
-        Thread p2 = new Thread(new SimpleProducer());
-        Thread p3 = new Thread(new SimpleProducer());
-        p1.start();
-        p2.start();
-        p3.start();
+        List<Thread> producerThreads = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            Thread p = new Thread(new SimpleProducer());
+            producerThreads.add(p);
+            p.start();
+        }
+
         try {
-            p1.join();
-            p2.join();
-            p3.join();
+            for (Thread p : producerThreads) {
+                p.join();
+            }
         } catch (InterruptedException e) {
             fail(e.getMessage());
         }
-        p1 = new Thread(new SimpleConsumer(0));
-        p2 = new Thread(new SimpleConsumer(18 * 10));
-        p3 = new Thread(new SimpleConsumer(18 * 20));
-        p1.start();
-        p2.start();
-        p3.start();
+
+        List<Thread> consumerThreads = new ArrayList<>();
+        int times = 0;
+        for (int i = 0; i < 3; i++) {
+            Thread c = new Thread(new SimpleConsumer(18 * times));
+            consumerThreads.add(c);
+            c.start();
+            times += 10;
+        }
+
         try {
-            p1.join();
-            p2.join();
-            p3.join();
+            for (Thread c : consumerThreads) {
+                c.join();
+            }
         } catch (InterruptedException e) {
             fail(e.getMessage());
         }
@@ -98,25 +103,28 @@ class BrokerTest {
 
     @Test
     void testAsyncMultiplePubPullReq() {
-        Thread p1 = new Thread(new SimpleProducer());
-        Thread p2 = new Thread(new SimpleProducer());
-        Thread p3 = new Thread(new SimpleProducer());
-        Thread c1 = new Thread(new SimpleConsumer(0));
-        Thread c2 = new Thread(new SimpleConsumer(18 * 10));
-        Thread c3 = new Thread(new SimpleConsumer(18 * 20));
-        p1.start();
-        p2.start();
-        p3.start();
-        c1.start();
-        c2.start();
-        c3.start();
+        List<Thread> producerThreads = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            Thread p = new Thread(new SimpleProducer());
+            producerThreads.add(p);
+            p.start();
+        }
+        List<Thread> consumerThreads = new ArrayList<>();
+        int times = 0;
+        for (int i = 0; i < 3; i++) {
+            Thread c = new Thread(new SimpleConsumer(18 * times));
+            consumerThreads.add(c);
+            c.start();
+            times += 10;
+        }
+
         try {
-            p1.join();
-            p2.join();
-            p3.join();
-            c1.join();
-            c2.join();
-            c3.join();
+            for (Thread p : producerThreads) {
+                p.join();
+            }
+            for (Thread c : consumerThreads) {
+                c.join();
+            }
         } catch (InterruptedException e) {
             fail(e.getMessage());
         }
