@@ -40,6 +40,39 @@ public class ProducerDriver {
 
         Curator curator = new Curator(config.getZkConnection());
         Map<Integer, List<Producer>> partitionMap = findBrokers(curator);
+        publish(config, partitionMap, curator);
+    }
+
+    /**
+     * Method to find brokers and store them in a map for easy lookup based on partition number.
+     *
+     * @return map that points partition to producer that connected with the brokers that store the partition
+     */
+    private static Map<Integer, List<Producer>> findBrokers(Curator curator) {
+        Collection<BrokerMetadata> brokers = curator.findBrokers();
+        Map<Integer, List<Producer>> partitionMap = new HashMap<>();
+        for (BrokerMetadata broker : brokers) {
+            Producer producer = new Producer(broker.getListenAddress(), broker.getListenPort());
+            int partition = broker.getPartition();
+            if (partitionMap.containsKey(partition)) {
+                partitionMap.get(partition).add(producer);
+            } else {
+                List<Producer> producers = new ArrayList<>();
+                producers.add(producer);
+                partitionMap.put(partition, producers);
+            }
+        }
+        return partitionMap;
+    }
+
+    /**
+     * Method to read from file line by line, and publish message to the appropriate broker based on key.
+     *
+     * @param config       config
+     * @param partitionMap partition map
+     * @param curator      curator
+     */
+    private static void publish(Config config, Map<Integer, List<Producer>> partitionMap, Curator curator) {
         try (FileInputStream fis = new FileInputStream(config.getFile());
              BufferedReader br = new BufferedReader(new InputStreamReader(fis))) {
             LOGGER.info("reading from file: " + config.getFile());
@@ -64,7 +97,6 @@ public class ProducerDriver {
             LOGGER.error(e.getMessage());
             System.exit(1);
         }
-
     }
 
     /**
@@ -130,27 +162,5 @@ public class ProducerDriver {
     private static byte[] findData(String line) {
         int index = findBreak(line) + 2;
         return line.substring(index).getBytes(StandardCharsets.UTF_8);
-    }
-
-    /**
-     * Method to find brokers and store them in a map for easy lookup based on partition number.
-     *
-     * @return map that points partition to producer that connected with the brokers that store the partition
-     */
-    private static Map<Integer, List<Producer>> findBrokers(Curator curator) {
-        Collection<BrokerMetadata> brokers = curator.findBrokers();
-        Map<Integer, List<Producer>> partitionMap = new HashMap<>();
-        for (BrokerMetadata broker : brokers) {
-            Producer producer = new Producer(broker.getListenAddress(), broker.getListenPort());
-            int partition = broker.getPartition();
-            if (partitionMap.containsKey(partition)) {
-                partitionMap.get(partition).add(producer);
-            } else {
-                List<Producer> producers = new ArrayList<>();
-                producers.add(producer);
-                partitionMap.put(partition, producers);
-            }
-        }
-        return partitionMap;
     }
 }
