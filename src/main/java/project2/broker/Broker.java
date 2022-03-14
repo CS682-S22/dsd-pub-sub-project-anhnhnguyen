@@ -1,11 +1,15 @@
 package project2.broker;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.curator.framework.CuratorFramework;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import project2.Connection;
 import project2.Constants;
 import project2.consumer.PullReq;
 import project2.producer.PubReq;
+import project2.zookeeper.BrokerRegister;
+import project2.zookeeper.InstanceSerializerFactory;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -47,15 +51,22 @@ public class Broker {
      * random access file.
      */
     private RandomAccessFile raf;
+    /**
+     * broker register.
+     */
+    private final BrokerRegister brokerRegister;
 
     /**
      * Start the broker to listen on the given host name and port number. Also delete old log files
      * and create new folder (if necessary) at initialization (for testing purpose).
      *
-     * @param host host name
-     * @param port port number
+     * @param host             host name
+     * @param port             port number
+     * @param partition        partition number
+     * @param curatorFramework curator framework
+     * @param objectMapper     object mapper
      */
-    public Broker(String host, int port) {
+    public Broker(String host, int port, int partition, CuratorFramework curatorFramework, ObjectMapper objectMapper) {
         this.topics = new HashMap<>();
         try {
             this.server = AsynchronousServerSocketChannel.open().bind(new InetSocketAddress(host, port));
@@ -64,6 +75,10 @@ public class Broker {
         } catch (IOException e) {
             LOGGER.error("can't start broker on: " + host + ":" + port + " " + e.getMessage());
         }
+        this.brokerRegister = new BrokerRegister(curatorFramework,
+                new InstanceSerializerFactory(objectMapper.reader(), objectMapper.writer()),
+                Constants.SERVICE_NAME, host, port, partition);
+        brokerRegister.registerAvailability();
         deleteFiles(Constants.TMP_FOLDER);
         deleteFiles(Constants.LOG_FOLDER);
         createFolder(Constants.TMP_FOLDER);
@@ -365,6 +380,7 @@ public class Broker {
             isRunning = false;
             server.close();
             raf.close();
+            brokerRegister.unregisterAvailability();
         } catch (IOException e) {
             LOGGER.error("close(): " + e.getMessage());
         }

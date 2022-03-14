@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import project2.Config;
 import project2.Constants;
 import project2.Utils;
+import project2.zookeeper.Curator;
 
 import java.io.FileNotFoundException;
 import java.io.FileReader;
@@ -32,11 +33,14 @@ public class BrokerDriver {
         try {
             Config config = new Gson().fromJson(new FileReader(args[0]), Config.class);
             config.validate();
-            Broker broker = new Broker(config.getHost(), config.getPort());
+            Curator curator = new Curator(config.getZkConnection());
+            Broker broker = new Broker(config.getHost(), config.getPort(), config.getPartition(),
+                    curator.getCuratorFramework(), curator.getObjectMapper());
             broker.start();
             Scanner scanner = new Scanner(System.in);
             if (scanner.nextLine().equalsIgnoreCase(Constants.EXIT)) {
                 broker.close();
+                curator.close();
             }
         } catch (FileNotFoundException e) {
             LOGGER.error(e.getMessage());

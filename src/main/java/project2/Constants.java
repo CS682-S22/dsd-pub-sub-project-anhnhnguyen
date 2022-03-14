@@ -62,4 +62,12 @@ public class Constants {
      * timeout interval.
      */
     public static final int TIME_OUT = 100;
+    /**
+     * zk base path.
+     */
+    public static final String BASE_PATH = "/pubsub";
+    /**
+     * service name.
+     */
+    public static final String SERVICE_NAME = "pubsub";
 }

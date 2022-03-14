@@ -7,10 +7,12 @@ import project2.Config;
 import project2.Constants;
 import project2.Utils;
 import project2.broker.ReqRes;
+import project2.zookeeper.BrokerMetadata;
+import project2.zookeeper.Curator;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
-import java.util.Scanner;
+import java.util.*;
 
 /**
  * Driver for consumer to connect with the broker and request to pull message for certain topic at a certain position.
@@ -37,17 +39,32 @@ public class ConsumerDriver {
         try {
             Config config = new Gson().fromJson(new FileReader(args[0]), Config.class);
             config.validate();
+            Curator curator = new Curator(config.getZkConnection());
+            Collection<BrokerMetadata> brokers = curator.findBrokers();
+            Map<Consumer, Integer> partitionMap = new HashMap<>();
+            for (BrokerMetadata broker : brokers) {
+                Consumer consumer = new Consumer(broker.getListenAddress(), broker.getListenPort(),
+                        config.getTopic(), config.getPosition());
+                partitionMap.put(consumer, broker.getPartition());
+            }
 
-            Consumer consumer = new Consumer(config.getHost(), config.getPort(), config.getTopic(), config.getPosition());
-
-            Thread t = new Thread(() -> request(consumer, config));
-            t.start();
+            List<Thread> threads = new ArrayList<>();
+            for (Consumer consumer : partitionMap.keySet()) {
+                Thread t = new Thread(() -> request(consumer, config, partitionMap.get(consumer)));
+                t.start();
+                threads.add(t);
+            }
 
             Scanner scanner = new Scanner(System.in);
             if (scanner.nextLine().equalsIgnoreCase(Constants.EXIT)) {
                 isRunning = false;
-                t.join();
-                consumer.close();
+                for (Thread t : threads) {
+                    t.join();
+                }
+                for (Consumer consumer : partitionMap.keySet()) {
+                    consumer.close();
+                }
+                curator.close();
             }
         } catch (FileNotFoundException | InterruptedException e) {
             LOGGER.error(e.getMessage());
@@ -60,16 +77,17 @@ public class ConsumerDriver {
      *
      * @param consumer consumer
      * @param config   config
+     * @param suffix   suffix
      */
-    private static void request(Consumer consumer, Config config) {
-        try (BufferedWriter bw = new BufferedWriter(new FileWriter(config.getTopic() + Constants.FILE_TYPE))) {
+    private static void request(Consumer consumer, Config config, int suffix) {
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(config.getTopic() + suffix + Constants.FILE_TYPE))) {
             while (isRunning) {
                 byte[] data = consumer.poll(Constants.TIME_OUT);
                 if (data != null) {
                     ReqRes response = new ReqRes(data);
                     bw.write(response.getKey() + " "
                             + new String(response.getData(), StandardCharsets.UTF_8) + "\n");
-                    LOGGER.info("write to file: " + config.getTopic() + Constants.FILE_TYPE);
+                    LOGGER.info("write to file: " + config.getTopic() + suffix + Constants.FILE_TYPE);
                 }
             }
         } catch (IOException e) {
