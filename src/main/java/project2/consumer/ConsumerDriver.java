@@ -3,6 +3,7 @@ package project2.consumer;
 import com.google.gson.Gson;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import project2.Client;
 import project2.Config;
 import project2.Constants;
 import project2.Utils;
@@ -41,10 +42,10 @@ public class ConsumerDriver {
             config.validate();
             Curator curator = new Curator(config.getZkConnection());
             Collection<BrokerMetadata> brokers = curator.findBrokers();
-            Map<Consumer, Integer> partitionMap = createConsumers(brokers, config);
+            Map<Client, Integer> partitionMap = createConsumers(brokers, config);
 
             List<Thread> threads = new ArrayList<>();
-            for (Consumer consumer : partitionMap.keySet()) {
+            for (Client consumer : partitionMap.keySet()) {
                 Thread t = new Thread(() -> request(consumer, config, partitionMap.get(consumer)));
                 t.start();
                 threads.add(t);
@@ -56,7 +57,7 @@ public class ConsumerDriver {
                 for (Thread t : threads) {
                     t.join();
                 }
-                for (Consumer consumer : partitionMap.keySet()) {
+                for (Client consumer : partitionMap.keySet()) {
                     consumer.close();
                 }
                 curator.close();
@@ -74,7 +75,7 @@ public class ConsumerDriver {
      * @param config   config
      * @param suffix   suffix
      */
-    private static void request(Consumer consumer, Config config, int suffix) {
+    private static void request(Client consumer, Config config, int suffix) {
         try (BufferedWriter bw = new BufferedWriter(new FileWriter(config.getTopic() + suffix + Constants.FILE_TYPE))) {
             while (isRunning) {
                 byte[] data = consumer.poll(Constants.TIME_OUT);
@@ -91,17 +92,22 @@ public class ConsumerDriver {
     }
 
     /**
-     * Method to create consumers object linked with each broker.
+     * Method to create consumers (pull/push) object linked with each broker.
      *
      * @param brokers brokers
      * @param config  config
      * @return map between consumer and the partition it's pulling from
      */
-    private static Map<Consumer, Integer> createConsumers(Collection<BrokerMetadata> brokers, Config config) {
-        Map<Consumer, Integer> partitionMap = new HashMap<>();
+    private static Map<Client, Integer> createConsumers(Collection<BrokerMetadata> brokers, Config config) {
+        Map<Client, Integer> partitionMap = new HashMap<>();
         for (BrokerMetadata broker : brokers) {
-            Consumer consumer = new Consumer(broker.getListenAddress(), broker.getListenPort(),
-                    config.getTopic(), config.getPosition());
+            Client consumer;
+            if (config.isPull()) {
+                consumer = new Consumer(broker.getListenAddress(), broker.getListenPort(),
+                        config.getTopic(), config.getPosition());
+            } else {
+                consumer = new PushConsumer(broker.getListenAddress(), broker.getListenPort(), config.getTopic());
+            }
             partitionMap.put(consumer, broker.getPartition());
         }
         return partitionMap;

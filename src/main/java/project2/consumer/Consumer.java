@@ -8,8 +8,6 @@ import project2.broker.ReqRes;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.LinkedList;
-import java.util.Queue;
 
 /**
  * Class that pulls message from the Broker by specifying topic and starting position to pull.
@@ -29,10 +27,6 @@ public class Consumer extends Client {
      * starting position.
      */
     private long startingPosition;
-    /**
-     * the queue to read messages from broker before delivering up to the application.
-     */
-    private final Queue<byte[]> queue;
 
     /**
      * Constructor.
@@ -46,7 +40,6 @@ public class Consumer extends Client {
         super(host, port);
         this.topic = topic;
         this.startingPosition = startingPosition;
-        this.queue = new LinkedList<>();
     }
 
     /**
@@ -71,20 +64,17 @@ public class Consumer extends Client {
      * @param milliseconds interval
      * @return byte[] array of message received
      */
+    @Override
     public byte[] poll(int milliseconds) {
-        if (!queue.isEmpty()) {
-            return queue.poll();
-        }
-        connection.send(prepareRequest(topic, startingPosition));
-        LOGGER.info("pull request sent. topic: " + topic + ", starting position: " + startingPosition);
         byte[] message = connection.receive(milliseconds);
-        while (message != null) {
-            queue.add(message);
+        if (message != null) {
             ReqRes response = new ReqRes(message);
             startingPosition = response.getOffset() + response.getKey().getBytes(StandardCharsets.UTF_8).length
                     + response.getData().length + 1;
-            message = connection.receive(milliseconds);
+        } else {
+            connection.send(prepareRequest(topic, startingPosition));
+            LOGGER.info("pull request sent. topic: " + topic + ", starting position: " + startingPosition);
         }
-        return queue.poll();
+        return message;
     }
 }

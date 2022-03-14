@@ -6,15 +6,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import project2.Connection;
 import project2.Constants;
+import project2.Utils;
 import project2.consumer.PullReq;
 import project2.producer.PubReq;
 import project2.zookeeper.BrokerRegister;
 import project2.zookeeper.InstanceSerializerFactory;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.RandomAccessFile;
+import java.io.*;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousServerSocketChannel;
@@ -25,6 +23,7 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -63,6 +62,10 @@ public class Broker {
      * lock map for topics.
      */
     private final Map<String, Lock> locks;
+    /**
+     * list of subscribers.
+     */
+    private final Map<String, CopyOnWriteArrayList<Connection>> subscribers;
 
     /**
      * Start the broker to listen on the given host name and port number. Also delete old log files
@@ -77,6 +80,7 @@ public class Broker {
     public Broker(String host, int port, int partition, CuratorFramework curatorFramework, ObjectMapper objectMapper) {
         this.topics = new HashMap<>();
         this.locks = new ConcurrentHashMap<>();
+        this.subscribers = new ConcurrentHashMap<>();
         try {
             this.server = AsynchronousServerSocketChannel.open().bind(new InetSocketAddress(host, port));
             LOGGER.info("broker started on: " + server.getLocalAddress());
@@ -178,18 +182,13 @@ public class Broker {
      */
     private void processRequest(Connection connection, byte[] request) {
         if (request[0] == Constants.PUB_REQ) {
-            PubReq pubReq = new PubReq(request);
-            String topic = pubReq.getTopic();
-            LOGGER.info("publish request. topic: " + topic + ", key: " + pubReq.getKey() +
-                    ", data: " + new String(pubReq.getData(), StandardCharsets.UTF_8));
-            processPubReq(topic, pubReq);
+            processPubReq(request);
         }
         if (request[0] == Constants.PULL_REQ) {
-            PullReq pullReq = new PullReq(request);
-            String topic = pullReq.getTopic();
-            long startingPosition = pullReq.getStartingPosition();
-            LOGGER.info("pull request. topic: " + topic + ", starting position: " + startingPosition);
-            processPullReq(connection, topic, startingPosition);
+            processPullReq(connection, request);
+        }
+        if (request[0] == Constants.SUB_REQ) {
+            addSubscriber(connection, request);
         }
     }
 
@@ -203,12 +202,15 @@ public class Broker {
      * When the file is ~ the maximum allowed size file for segment file, then copy the file to the log/folder and write message to the next segment file.
      * Add offset of the message of the next segment file to the starting offset list.
      *
-     * @param topic  topic
-     * @param pubReq publish request
-     *
-     * Reference for locking on certain topic: https://stackoverflow.com/questions/71007235/java-synchronized-on-the-same-file-but-not-different
+     * @param request request
+     *                <p>
+     *                Reference for locking on certain topic: https://stackoverflow.com/questions/71007235/java-synchronized-on-the-same-file-but-not-different
      */
-    private void processPubReq(String topic, PubReq pubReq) {
+    private void processPubReq(byte[] request) {
+        PubReq pubReq = new PubReq(request);
+        String topic = pubReq.getTopic();
+        LOGGER.info("publish request. topic: " + topic + ", key: " + pubReq.getKey() +
+                ", data: " + new String(pubReq.getData(), StandardCharsets.UTF_8));
         Lock lock = locks.computeIfAbsent(topic, t -> new ReentrantLock());
         lock.lock();
         try {
@@ -297,6 +299,18 @@ public class Broker {
             Files.move(new File(Constants.TMP_FOLDER + topic + Constants.PATH_STRING + currentFile
                     + Constants.FILE_TYPE).toPath(), permFile.toPath());
             LOGGER.info("flushed segment file: " + permFile.toPath());
+
+            // thread to send subscribers messages when segment file is flushed to disk
+            if (subscribers.containsKey(topic)) {
+                Thread t = new Thread(() -> {
+                    List<Connection> connections = subscribers.get(topic);
+                    for (Connection connection : connections) {
+                        sendToSubscriber(permFile.getName(), currentFile, topic, connection);
+                    }
+                });
+                t.start();
+            }
+
             String fileName = Constants.TMP_FOLDER + topic + Constants.PATH_STRING + current + Constants.FILE_TYPE;
             LOGGER.info("start writing to segment file: " + fileName);
             indexes.get(Constants.STARTING_OFFSET_INDEX).add(current);
@@ -306,14 +320,44 @@ public class Broker {
     }
 
     /**
+     * Method to read all bytes in the segment file that just flushed to disk and send to subscribers.
+     *
+     * @param fileName    segment file
+     * @param currentFile offset of the first message in the segment file
+     * @param topic       topic
+     * @param connection  connection
+     */
+    private void sendToSubscriber(String fileName, long currentFile, String topic, Connection connection) {
+        try {
+            List<Long> offSetList = topics.get(topic).get(Constants.OFFSET_INDEX);
+            int index = Arrays.binarySearch(offSetList.toArray(), currentFile);
+            raf = new RandomAccessFile(fileName, "r");
+            long length = raf.length();
+            long readSofar = 0;
+            while (readSofar < length) {
+                long position = offSetList.get(index) - currentFile;
+                long messageLength = offSetList.get(index + 1) - offSetList.get(index);
+                sendData(connection, messageLength, offSetList.get(index), position, topic);
+                readSofar += messageLength;
+                index++;
+            }
+        } catch (IOException e) {
+            LOGGER.error("sendToSubscriber(): " + e.getMessage());
+        }
+    }
+
+    /**
      * Method to first search for the index of the starting position in the offset list and the log file that has the
      * starting position. Then read key value from the file and send up to 10 messages to the consumer.
      *
-     * @param connection       connection
-     * @param topic            topic
-     * @param startingPosition starting position
+     * @param connection connection
+     * @param request    request
      */
-    private void processPullReq(Connection connection, String topic, long startingPosition) {
+    private void processPullReq(Connection connection, byte[] request) {
+        PullReq pullReq = new PullReq(request);
+        String topic = pullReq.getTopic();
+        long startingPosition = pullReq.getStartingPosition();
+        LOGGER.info("pull request. topic: " + topic + ", starting position: " + startingPosition);
         if (topics.containsKey(topic)) {
             List<List<Long>> list = topics.get(topic);
             if (list.size() == 2) {
@@ -344,12 +388,15 @@ public class Broker {
                         String fileName = Constants.LOG_FOLDER + topic + Constants.PATH_STRING + startingOffsetList.get(fileIndex) + Constants.FILE_TYPE;
                         // only expose to consumer when data is flushed to disk, so need to check the log/ folder
                         if (Files.exists(Paths.get(fileName))) {
-                            long length = offSetList.get(index + 1) - offSetList.get(index);
-                            long position = offSetList.get(index) - startingOffsetList.get(fileIndex);
-                            if (sendData(fileName, connection, (int) length, (int) position, offset)) {
+                            try {
+                                long length = offSetList.get(index + 1) - offSetList.get(index);
+                                long position = offSetList.get(index) - startingOffsetList.get(fileIndex);
+                                raf = new RandomAccessFile(fileName, "r");
+                                sendData(connection, length, offset, position, topic);
                                 index++;
                                 count++;
-                                LOGGER.info("data at offset: " + offset + " from topic: " + topic + " sent");
+                            } catch (FileNotFoundException e) {
+                                LOGGER.error("processPullReq(): " + e.getMessage());
                             }
                         } else {
                             break;
@@ -363,29 +410,47 @@ public class Broker {
     /**
      * Method to send data to consumer via connection by looking up the position of data in file and read data length.
      *
-     * @param fileName   file that has the message
      * @param connection connection
      * @param length     length of message
-     * @param position   position of message
+     * @param position   position
      * @param offset     offset of message
-     * @return true if data is sent, else false
      */
-    private boolean sendData(String fileName, Connection connection, int length, int position, long offset) {
-        byte[] data = new byte[length];
+    private void sendData(Connection connection, long length, long offset, long position, String topic) {
         try {
-            raf = new RandomAccessFile(fileName, "r");
+            byte[] data = new byte[(int) length];
             raf.seek(position);
             raf.read(data);
-            ByteBuffer response = ByteBuffer.allocate(length + 9);
+            ByteBuffer response = ByteBuffer.allocate((int) length + 9);
             response.put((byte) Constants.REQ_RES);
             response.putLong(offset);
             response.put(data);
             connection.send(response.array());
-            return true;
+            LOGGER.info("data at offset: " + offset + " from topic: " + topic + " sent");
         } catch (IOException e) {
-            LOGGER.error(e.getMessage());
+            LOGGER.error("sendData(): " + e.getMessage());
         }
-        return false;
+    }
+
+    /**
+     * Method to add subscriber to the appropriate topic.
+     *
+     * @param connection connection
+     * @param request    request
+     */
+    private void addSubscriber(Connection connection, byte[] request) {
+        String topic = new String(Utils.extractBytes(1, request.length, request, false),
+                StandardCharsets.UTF_8);
+        // Reference: https://stackoverflow.com/questions/18605876/concurrent-hashmap-and-copyonwritearraylist
+        CopyOnWriteArrayList<Connection> copy = subscribers.get(topic);
+        if (copy == null) {
+            copy = new CopyOnWriteArrayList<>();
+            CopyOnWriteArrayList<Connection> inMap = subscribers.putIfAbsent(topic, copy);
+            if (inMap != null) {
+                copy = inMap;
+            }
+        }
+        copy.add(connection);
+        LOGGER.info("subscriber added to topic: " + topic);
     }
 
     /**

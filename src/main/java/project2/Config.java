@@ -36,6 +36,10 @@ public class Config {
      * zkConnection.
      */
     private final String zkConnection;
+    /**
+     * boolean for pull/push consumer.
+     */
+    private final boolean isPull;
 
     /**
      * Constructor.
@@ -47,8 +51,10 @@ public class Config {
      * @param position     starting position to pull from
      * @param partition    partition
      * @param zkConnection zkConnection
+     * @param isPull       isPull
      */
-    public Config(String host, int port, String file, String topic, long position, int partition, String zkConnection) {
+    public Config(String host, int port, String file, String topic,
+                  long position, int partition, String zkConnection, boolean isPull) {
         this.host = host;
         this.port = port;
         this.file = file;
@@ -56,6 +62,7 @@ public class Config {
         this.position = position;
         this.partition = partition;
         this.zkConnection = zkConnection;
+        this.isPull = isPull;
     }
 
     /**
@@ -119,6 +126,15 @@ public class Config {
      */
     public String getZkConnection() {
         return zkConnection;
+    }
+
+    /**
+     * Getter for boolean status for pull/push consumer.
+     *
+     * @return isPull
+     */
+    public boolean isPull() {
+        return isPull;
     }
 
     /**

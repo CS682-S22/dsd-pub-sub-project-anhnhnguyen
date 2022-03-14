@@ -59,4 +59,15 @@ public abstract class Client {
             LOGGER.error("close(): " + e.getMessage());
         }
     }
+
+    /**
+     * Method to listen for messages from broker, timeout after the specified milliseconds (do nothing when timeout,
+     * listen again).
+     *
+     * @param milliseconds milliseconds
+     * @return message from broker
+     */
+    public byte[] poll(int milliseconds) {
+        return connection.receive(milliseconds);
+    }
 }
