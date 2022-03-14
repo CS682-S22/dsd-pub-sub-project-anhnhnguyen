@@ -93,6 +93,7 @@ public class BrokerRegister {
             discovery = getDiscovery();
             discovery.start();
             discovery.unregisterService(getInstance());
+            discovery.close();
         } catch (Exception e) {
             LOGGER.error("unregisterAvailability(): " + e.getMessage());
         }

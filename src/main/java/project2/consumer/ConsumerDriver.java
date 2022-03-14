@@ -41,12 +41,7 @@ public class ConsumerDriver {
             config.validate();
             Curator curator = new Curator(config.getZkConnection());
             Collection<BrokerMetadata> brokers = curator.findBrokers();
-            Map<Consumer, Integer> partitionMap = new HashMap<>();
-            for (BrokerMetadata broker : brokers) {
-                Consumer consumer = new Consumer(broker.getListenAddress(), broker.getListenPort(),
-                        config.getTopic(), config.getPosition());
-                partitionMap.put(consumer, broker.getPartition());
-            }
+            Map<Consumer, Integer> partitionMap = createConsumers(brokers, config);
 
             List<Thread> threads = new ArrayList<>();
             for (Consumer consumer : partitionMap.keySet()) {
@@ -93,5 +88,22 @@ public class ConsumerDriver {
         } catch (IOException e) {
             LOGGER.error(e.getMessage());
         }
+    }
+
+    /**
+     * Method to create consumers object linked with each broker.
+     *
+     * @param brokers brokers
+     * @param config  config
+     * @return map between consumer and the partition it's pulling from
+     */
+    private static Map<Consumer, Integer> createConsumers(Collection<BrokerMetadata> brokers, Config config) {
+        Map<Consumer, Integer> partitionMap = new HashMap<>();
+        for (BrokerMetadata broker : brokers) {
+            Consumer consumer = new Consumer(broker.getListenAddress(), broker.getListenPort(),
+                    config.getTopic(), config.getPosition());
+            partitionMap.put(consumer, broker.getPartition());
+        }
+        return partitionMap;
     }
 }
