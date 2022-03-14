@@ -5,9 +5,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import project2.Config;
 import project2.Utils;
+import project2.zookeeper.BrokerMetadata;
+import project2.zookeeper.Curator;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
+import java.util.*;
 
 /**
  * Driver for producer to connect with broker and publish message.
@@ -34,7 +37,9 @@ public class ProducerDriver {
             LOGGER.error(e.getMessage());
             System.exit(1);
         }
-        Producer producer = new Producer(config.getHost(), config.getPort());
+
+        Curator curator = new Curator(config.getZkConnection());
+        Map<Integer, List<Producer>> partitionMap = findBrokers(curator);
         try (FileInputStream fis = new FileInputStream(config.getFile());
              BufferedReader br = new BufferedReader(new InputStreamReader(fis))) {
             LOGGER.info("reading from file: " + config.getFile());
@@ -43,13 +48,23 @@ public class ProducerDriver {
                 String topic = findTopic(line);
                 String key = findKey(line);
                 byte[] data = findData(line);
-                producer.send(topic, key, data);
+                int partition = key.hashCode() % partitionMap.size();
+                List<Producer> producers = partitionMap.get(partition);
+                for (Producer producer : producers) {
+                    producer.send(topic, key, data);
+                }
             }
+            for (List<Producer> producers : partitionMap.values()) {
+                for (Producer producer : producers) {
+                    producer.close();
+                }
+            }
+            curator.close();
         } catch (IOException e) {
             LOGGER.error(e.getMessage());
             System.exit(1);
         }
-        producer.close();
+
     }
 
     /**
@@ -115,5 +130,27 @@ public class ProducerDriver {
     private static byte[] findData(String line) {
         int index = findBreak(line) + 2;
         return line.substring(index).getBytes(StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Method to find brokers and store them in a map for easy lookup based on partition number.
+     *
+     * @return map that points partition to producer that connected with the brokers that store the partition
+     */
+    private static Map<Integer, List<Producer>> findBrokers(Curator curator) {
+        Collection<BrokerMetadata> brokers = curator.findBrokers();
+        Map<Integer, List<Producer>> partitionMap = new HashMap<>();
+        for (BrokerMetadata broker : brokers) {
+            Producer producer = new Producer(broker.getListenAddress(), broker.getListenPort());
+            int partition = broker.getPartition();
+            if (partitionMap.containsKey(partition)) {
+                partitionMap.get(partition).add(producer);
+            } else {
+                List<Producer> producers = new ArrayList<>();
+                producers.add(producer);
+                partitionMap.put(partition, producers);
+            }
+        }
+        return partitionMap;
     }
 }

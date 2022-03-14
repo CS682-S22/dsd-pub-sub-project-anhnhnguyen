@@ -5,37 +5,52 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import project2.consumer.Consumer;
 import project2.producer.Producer;
+import project2.zookeeper.BrokerMetadata;
+import project2.zookeeper.Curator;
 
 import java.nio.charset.StandardCharsets;
+import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class BrokerTest {
+    private Broker broker;
     private final String HOST = "localhost";
     private final int PORT = 1024;
-    private Broker broker;
     private final String TOPIC = "test";
     private final String KEY = "key";
     private final byte[] DATA = "this is a test".getBytes(StandardCharsets.UTF_8);
+    private Curator curator;
 
     @BeforeEach
     void setUp() {
-        broker = new Broker(HOST, PORT);
+        curator = new Curator("127.0.0.1:2181");
+        int partition = 0;
+        broker = new Broker(HOST, PORT, partition, curator.getCuratorFramework(), curator.getObjectMapper());
         broker.start();
     }
 
     @AfterEach
     void tearDown() {
         broker.close();
+        curator.close();
     }
 
     @Test
     void testBrokerSimpleValidPubPullReq() {
-        Producer producer = new Producer(HOST, PORT);
+        Map<Integer, List<Producer>> partitionMap = findBrokers(curator);
         for (int i = 0; i < 100; i++) {
-            producer.send(TOPIC, KEY, DATA);
+            int partition = KEY.hashCode() % partitionMap.size();
+            List<Producer> producers = partitionMap.get(partition);
+            for (Producer producer : producers) {
+                producer.send(TOPIC, KEY, DATA);
+            }
         }
-        producer.close();
+        for (List<Producer> producers : partitionMap.values()) {
+            for (Producer producer : producers) {
+                producer.close();
+            }
+        }
         Consumer consumer = new Consumer(HOST, PORT, TOPIC, 0);
         int count = 0;
         while (count < 56) {
@@ -110,11 +125,19 @@ class BrokerTest {
     private class SimpleProducer implements Runnable {
         @Override
         public void run() {
-            Producer producer = new Producer(HOST, PORT);
+            Map<Integer, List<Producer>> partitionMap = findBrokers(curator);
             for (int i = 0; i < 100; i++) {
-                producer.send(TOPIC, KEY, DATA);
+                int partition = KEY.hashCode() % partitionMap.size();
+                List<Producer> producers = partitionMap.get(partition);
+                for (Producer producer : producers) {
+                    producer.send(TOPIC, KEY, DATA);
+                }
             }
-            producer.close();
+            for (List<Producer> producers : partitionMap.values()) {
+                for (Producer producer : producers) {
+                    producer.close();
+                }
+            }
         }
     }
 
@@ -138,5 +161,22 @@ class BrokerTest {
             assertEquals(count, 30 - startingPosition / 18);
             consumer.close();
         }
+    }
+
+    private Map<Integer, List<Producer>> findBrokers(Curator curator) {
+        Collection<BrokerMetadata> brokers = curator.findBrokers();
+        Map<Integer, List<Producer>> partitionMap = new HashMap<>();
+        for (BrokerMetadata broker : brokers) {
+            Producer producer = new Producer(broker.getListenAddress(), broker.getListenPort());
+            int partition = broker.getPartition();
+            if (partitionMap.containsKey(partition)) {
+                partitionMap.get(partition).add(producer);
+            } else {
+                List<Producer> producers = new ArrayList<>();
+                producers.add(producer);
+                partitionMap.put(partition, producers);
+            }
+        }
+        return partitionMap;
     }
 }
