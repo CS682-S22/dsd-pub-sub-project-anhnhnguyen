@@ -52,7 +52,7 @@ public class Consumer extends Client {
     public byte[] poll(int milliseconds) {
         byte[] message = getMessage(milliseconds);
         if (message == null) {
-            connection.send(prepareRequest(topic, startingPosition));
+            connection.send(prepareRequest(topic, startingPosition, (byte) Constants.PULL_REQ));
             LOGGER.info("pull request sent. topic: " + topic + ", starting position: " + startingPosition);
         }
         return message;
@@ -63,11 +63,12 @@ public class Consumer extends Client {
      *
      * @param topic            topic
      * @param startingPosition starting position
+     * @param messageType      message type (Pull request or subscribe request)
      * @return byte array in the form of [1-byte message type] | [topic] | 0 | [8-byte offset]
      */
-    protected byte[] prepareRequest(String topic, long startingPosition) {
+    protected byte[] prepareRequest(String topic, long startingPosition, byte messageType) {
         ByteBuffer byteBuffer = ByteBuffer.allocate(topic.getBytes(StandardCharsets.UTF_8).length + 10);
-        byteBuffer.put((byte) Constants.PULL_REQ);
+        byteBuffer.put(messageType);
         byteBuffer.put(topic.getBytes(StandardCharsets.UTF_8));
         byteBuffer.put((byte) 0);
         byteBuffer.putLong(startingPosition);

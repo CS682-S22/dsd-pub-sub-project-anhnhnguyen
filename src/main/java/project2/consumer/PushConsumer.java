@@ -2,6 +2,7 @@ package project2.consumer;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import project2.Constants;
 
 /**
  * Class that lets consumer be push-based instead of pull-based by first subscribing to a certain topic
@@ -21,7 +22,7 @@ public class PushConsumer extends Consumer {
      */
     public PushConsumer(String host, int port, String topic, long startingPosition) {
         super(host, port, topic, startingPosition);
-        connection.send(prepareRequest(topic, startingPosition));
+        connection.send(prepareRequest(topic, startingPosition, (byte) Constants.SUB_REQ));
         Logger logger = LoggerFactory.getLogger(PushConsumer.class);
         logger.info("subscribe request sent. topic: " + topic);
     }
