@@ -66,6 +66,10 @@ public class Broker {
      * list of subscribers.
      */
     private final Map<String, CopyOnWriteArrayList<Connection>> subscribers;
+    /**
+     * lock map for connection.
+     */
+    private final Map<Connection, Lock> connectionLockMap;
 
     /**
      * Start the broker to listen on the given host name and port number. Also delete old log files
@@ -81,6 +85,7 @@ public class Broker {
         this.topics = new HashMap<>();
         this.locks = new ConcurrentHashMap<>();
         this.subscribers = new ConcurrentHashMap<>();
+        this.connectionLockMap = new ConcurrentHashMap<>();
         try {
             this.server = AsynchronousServerSocketChannel.open().bind(new InetSocketAddress(host, port));
             LOGGER.info("broker started on: " + server.getLocalAddress());
@@ -302,12 +307,7 @@ public class Broker {
 
             // thread to send subscribers messages when segment file is flushed to disk
             if (subscribers.containsKey(topic)) {
-                Thread t = new Thread(() -> {
-                    List<Connection> connections = subscribers.get(topic);
-                    for (Connection connection : connections) {
-                        sendToSubscriber(permFile.getPath(), currentFile, topic, connection);
-                    }
-                });
+                Thread t = new Thread(() -> sendToSubscribers(topic, permFile, currentFile));
                 t.start();
             }
 
@@ -316,6 +316,26 @@ public class Broker {
             indexes.get(Constants.STARTING_OFFSET_INDEX).add(current);
         } catch (IOException e) {
             LOGGER.error("initializeSegmentFile(): " + e.getMessage());
+        }
+    }
+
+    /**
+     * Method to iterate through the list of subscribers and send messages in the topic they subscribe to.
+     *
+     * @param topic       topic
+     * @param permFile    persistent file
+     * @param currentFile offset of the first message in the persistent file
+     */
+    private void sendToSubscribers(String topic, File permFile, long currentFile) {
+        List<Connection> connections = subscribers.get(topic);
+        for (Connection connection : connections) {
+            Lock lock = connectionLockMap.computeIfAbsent(connection, l -> new ReentrantLock());
+            lock.lock();
+            try {
+                sendToSubscriber(permFile.getPath(), currentFile, topic, connection);
+            } finally {
+                lock.unlock();
+            }
         }
     }
 
