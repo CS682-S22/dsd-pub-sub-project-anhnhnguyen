@@ -82,9 +82,11 @@ public class ConsumerDriver {
                 if (data != null) {
                     ReqRes response = new ReqRes(data);
                     bw.write(response.getKey() + " "
-                            + new String(response.getData(), StandardCharsets.UTF_8) + "\n");
+                            + new String(response.getData(), StandardCharsets.UTF_8));
+                    bw.newLine();
                     bw.flush();
-                    LOGGER.info("write to file: " + config.getTopic() + suffix + Constants.FILE_TYPE + ", offset: " + response.getOffset());
+                    LOGGER.info("write to file: " + config.getTopic() + suffix + Constants.FILE_TYPE + ", offset: " + response.getOffset()
+                            + ", key length: " + response.getKey().length() + ", data length: " + new String(response.getData(), StandardCharsets.UTF_8).length());
                 }
             }
             bw.flush();

@@ -50,10 +50,6 @@ public class Broker {
      */
     private final Map<String, List<List<Long>>> topics;
     /**
-     * random access file.
-     */
-    private RandomAccessFile raf;
-    /**
      * broker register.
      */
     private final BrokerRegister brokerRegister;
@@ -351,16 +347,17 @@ public class Broker {
         try {
             List<Long> offSetList = topics.get(topic).get(Constants.OFFSET_INDEX);
             int index = Arrays.binarySearch(offSetList.toArray(), currentFile);
-            raf = new RandomAccessFile(fileName, "r");
+            RandomAccessFile raf = new RandomAccessFile(fileName, "r");
             long length = raf.length();
             long readSofar = 0;
             while (readSofar < length) {
                 long position = offSetList.get(index) - currentFile;
                 long messageLength = offSetList.get(index + 1) - offSetList.get(index);
-                sendData(connection, messageLength, offSetList.get(index), position, topic);
+                sendData(connection, messageLength, offSetList.get(index), position, topic, raf);
                 readSofar += messageLength;
                 index++;
             }
+            raf.close();
         } catch (IOException e) {
             LOGGER.error("sendToSubscriber(): " + e.getMessage());
         }
@@ -411,11 +408,12 @@ public class Broker {
                             try {
                                 long length = offSetList.get(index + 1) - offSetList.get(index);
                                 long position = offSetList.get(index) - startingOffsetList.get(fileIndex);
-                                raf = new RandomAccessFile(fileName, "r");
-                                sendData(connection, length, offset, position, topic);
+                                RandomAccessFile raf = new RandomAccessFile(fileName, "r");
+                                sendData(connection, length, offset, position, topic, raf);
                                 index++;
                                 count++;
-                            } catch (FileNotFoundException e) {
+                                raf.close();
+                            } catch (IOException e) {
                                 LOGGER.error("processPullReq(): " + e.getMessage());
                             }
                         } else {
@@ -435,7 +433,7 @@ public class Broker {
      * @param position   position
      * @param offset     offset of message
      */
-    private void sendData(Connection connection, long length, long offset, long position, String topic) {
+    private void sendData(Connection connection, long length, long offset, long position, String topic, RandomAccessFile raf) {
         try {
             byte[] data = new byte[(int) length];
             raf.seek(position);
@@ -445,7 +443,7 @@ public class Broker {
             response.putLong(offset);
             response.put(data);
             connection.send(response.array());
-            LOGGER.info("data at offset: " + offset + " from topic: " + topic + " sent");
+            LOGGER.info("data at offset: " + offset + " from topic: " + topic + " sent" + Arrays.toString(data));
         } catch (IOException e) {
             LOGGER.error("sendData(): " + e.getMessage());
         }
@@ -481,7 +479,6 @@ public class Broker {
             LOGGER.info("closing broker");
             isRunning = false;
             server.close();
-            raf.close();
             brokerRegister.unregisterAvailability();
         } catch (IOException e) {
             LOGGER.error("close(): " + e.getMessage());
