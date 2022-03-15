@@ -421,7 +421,7 @@ public class Broker {
      * @param request    request
      */
     private void addSubscriber(Connection connection, byte[] request) {
-        String topic = new String(Utils.extractBytes(1, request.length, request, false),
+        String topic = new String(Utils.extractBytes(1, request.length, request, true),
                 StandardCharsets.UTF_8);
         // Reference: https://stackoverflow.com/questions/18605876/concurrent-hashmap-and-copyonwritearraylist
         CopyOnWriteArrayList<Connection> copy = subscribers.get(topic);
