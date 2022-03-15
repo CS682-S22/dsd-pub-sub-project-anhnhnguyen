@@ -110,7 +110,8 @@ public class ConsumerDriver {
                 consumer = new Consumer(broker.getListenAddress(), broker.getListenPort(),
                         config.getTopic(), config.getPosition());
             } else {
-                consumer = new PushConsumer(broker.getListenAddress(), broker.getListenPort(), config.getTopic());
+                consumer = new PushConsumer(broker.getListenAddress(), broker.getListenPort(),
+                        config.getTopic(), config.getPosition());
             }
             partitionMap.put(consumer, broker.getPartition());
         }

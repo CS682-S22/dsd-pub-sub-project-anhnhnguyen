@@ -82,10 +82,10 @@ public class Broker {
         this.locks = new ConcurrentHashMap<>();
         this.subscribers = new ConcurrentHashMap<>();
         this.connectionLockMap = new ConcurrentHashMap<>();
+        this.isRunning = true;
         try {
             this.server = AsynchronousServerSocketChannel.open().bind(new InetSocketAddress(host, port));
             LOGGER.info("broker started on: " + server.getLocalAddress());
-            this.isRunning = true;
         } catch (IOException e) {
             LOGGER.error("can't start broker on: " + host + ":" + port + " " + e.getMessage());
         }
@@ -93,49 +93,10 @@ public class Broker {
                 new InstanceSerializerFactory(objectMapper.reader(), objectMapper.writer()),
                 Constants.SERVICE_NAME, host, port, partition);
         brokerRegister.registerAvailability();
-        deleteFiles(Constants.TMP_FOLDER);
-        deleteFiles(Constants.LOG_FOLDER);
-        createFolder(Constants.TMP_FOLDER);
-        createFolder(Constants.LOG_FOLDER);
-    }
-
-    /**
-     * Method to traverse the folder and delete log files in the folder.
-     *
-     * @param name folder name
-     */
-    private void deleteFiles(String name) {
-        File folder = new File(name);
-        if (folder.exists()) {
-            String[] subFolders = folder.list();
-            if (subFolders != null) {
-                for (String f : subFolders) {
-                    File subFolder = new File(name + f);
-                    String[] fileNames = subFolder.list();
-                    if (fileNames != null) {
-                        for (String file : fileNames) {
-                            File currentFile = new File(subFolder.getPath(), file);
-                            if (!currentFile.delete()) {
-                                LOGGER.error("deleteFiles(): " + currentFile.getPath());
-                            }
-                        }
-                    }
-                }
-            }
-
-        }
-    }
-
-    /**
-     * Method to create a new folder if folder doesn't exist.
-     *
-     * @param name folder name
-     */
-    private void createFolder(String name) {
-        File folder = new File(name);
-        if (!folder.exists() && !folder.mkdirs()) {
-            LOGGER.error("createFolder(): " + name);
-        }
+        Utils.deleteFiles(Constants.TMP_FOLDER);
+        Utils.deleteFiles(Constants.LOG_FOLDER);
+        Utils.createFolder(Constants.TMP_FOLDER);
+        Utils.createFolder(Constants.LOG_FOLDER);
     }
 
     /**
@@ -186,7 +147,7 @@ public class Broker {
             processPubReq(request);
         }
         if (request[0] == Constants.PULL_REQ) {
-            processPullReq(connection, request);
+            processPullReq(connection, request, Constants.NUM_RESPONSE);
         }
         if (request[0] == Constants.SUB_REQ) {
             addSubscriber(connection, request);
@@ -266,7 +227,7 @@ public class Broker {
     private void initializeTopic(List<List<Long>> indexes, String topic) {
         // create tmp folder for the topic
         String folder = Constants.TMP_FOLDER + topic + Constants.PATH_STRING;
-        createFolder(folder);
+        Utils.createFolder(folder);
 
         // initialize the offset list for the topic
         List<Long> offsetList = new ArrayList<>();
@@ -295,7 +256,7 @@ public class Broker {
     private void initializeSegmentFile(String topic, long currentFile, List<List<Long>> indexes, long current) {
         try {
             String folder = Constants.LOG_FOLDER + topic + Constants.PATH_STRING;
-            createFolder(folder);
+            Utils.createFolder(folder);
             File permFile = new File(folder + currentFile + Constants.FILE_TYPE);
             Files.move(new File(Constants.TMP_FOLDER + topic + Constants.PATH_STRING + currentFile
                     + Constants.FILE_TYPE).toPath(), permFile.toPath());
@@ -370,7 +331,7 @@ public class Broker {
      * @param connection connection
      * @param request    request
      */
-    private void processPullReq(Connection connection, byte[] request) {
+    private void processPullReq(Connection connection, byte[] request, int numMessages) {
         PullReq pullReq = new PullReq(request);
         String topic = pullReq.getTopic();
         long startingPosition = pullReq.getStartingPosition();
@@ -393,7 +354,11 @@ public class Broker {
                 }
                 if (index >= 0) {
                     int count = 0;
-                    while (index < offSetList.size() - 1 && count < Constants.NUM_RESPONSE) {
+                    if (numMessages == 0) {
+                        numMessages = Integer.MAX_VALUE; // send during push (for first subscription)
+                    }
+
+                    while (index < offSetList.size() - 1 && count < numMessages) {
                         long offset = offSetList.get(index);
                         // search for the file that has the offset, binarySearch method include insertionPoint which is
                         // the index where the number would be put in if it doesn't find the number. So for this application
@@ -469,6 +434,15 @@ public class Broker {
         }
         copy.add(connection);
         LOGGER.info("subscriber added to topic: " + topic);
+
+        // if subscriber starts subscribing to an old offset, process and send those first before sending the new offset
+        Lock lock = connectionLockMap.computeIfAbsent(connection, l -> new ReentrantLock());
+        lock.lock();
+        try {
+            processPullReq(connection, request, 0);
+        } finally {
+            lock.unlock();
+        }
     }
 
     /**
@@ -478,8 +452,8 @@ public class Broker {
         try {
             LOGGER.info("closing broker");
             isRunning = false;
-            server.close();
             brokerRegister.unregisterAvailability();
+            server.close();
         } catch (IOException e) {
             LOGGER.error("close(): " + e.getMessage());
         }

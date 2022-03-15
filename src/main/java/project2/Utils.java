@@ -1,11 +1,20 @@
 package project2;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.File;
+
 /**
  * Class that has common methods to be used by multiple classes.
  *
  * @author anhnguyen
  */
 public class Utils {
+    /**
+     * logger object.
+     */
+    private static final Logger LOGGER = LoggerFactory.getLogger(Utils.class);
     /**
      * method to validate program arguments.
      *
@@ -41,5 +50,44 @@ public class Utils {
         byte[] bytes = new byte[j];
         System.arraycopy(tmp, 0, bytes, 0, j);
         return bytes;
+    }
+
+    /**
+     * Method to traverse the folder and delete log files in the folder.
+     *
+     * @param name folder name
+     */
+    public static void deleteFiles(String name) {
+        File folder = new File(name);
+        if (folder.exists()) {
+            String[] subFolders = folder.list();
+            if (subFolders != null) {
+                for (String f : subFolders) {
+                    File subFolder = new File(name + f);
+                    String[] fileNames = subFolder.list();
+                    if (fileNames != null) {
+                        for (String file : fileNames) {
+                            File currentFile = new File(subFolder.getPath(), file);
+                            if (!currentFile.delete()) {
+                                LOGGER.error("deleteFiles(): " + currentFile.getPath());
+                            }
+                        }
+                    }
+                }
+            }
+
+        }
+    }
+
+    /**
+     * Method to create a new folder if folder doesn't exist.
+     *
+     * @param name folder name
+     */
+    public static void createFolder(String name) {
+        File folder = new File(name);
+        if (!folder.exists() && !folder.mkdirs()) {
+            LOGGER.error("createFolder(): " + name);
+        }
     }
 }

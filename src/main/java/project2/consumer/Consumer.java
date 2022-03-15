@@ -22,11 +22,11 @@ public class Consumer extends Client {
     /**
      * topic.
      */
-    private final String topic;
+    protected final String topic;
     /**
      * starting position.
      */
-    private long startingPosition;
+    protected long startingPosition;
 
     /**
      * Constructor.
@@ -43,13 +43,29 @@ public class Consumer extends Client {
     }
 
     /**
+     * method to periodically send request to broker every specified milliseconds if no responses from broker.
+     *
+     * @param milliseconds interval
+     * @return byte[] array of message received
+     */
+    @Override
+    public byte[] poll(int milliseconds) {
+        byte[] message = getMessage(milliseconds);
+        if (message == null) {
+            connection.send(prepareRequest(topic, startingPosition));
+            LOGGER.info("pull request sent. topic: " + topic + ", starting position: " + startingPosition);
+        }
+        return message;
+    }
+
+    /**
      * Method to prepare request to broker to pull message for the specified topic and starting position.
      *
      * @param topic            topic
      * @param startingPosition starting position
      * @return byte array in the form of [1-byte message type] | [topic] | 0 | [8-byte offset]
      */
-    private byte[] prepareRequest(String topic, long startingPosition) {
+    protected byte[] prepareRequest(String topic, long startingPosition) {
         ByteBuffer byteBuffer = ByteBuffer.allocate(topic.getBytes(StandardCharsets.UTF_8).length + 10);
         byteBuffer.put((byte) Constants.PULL_REQ);
         byteBuffer.put(topic.getBytes(StandardCharsets.UTF_8));
@@ -59,13 +75,12 @@ public class Consumer extends Client {
     }
 
     /**
-     * method to periodically send request to broker every specified milliseconds if no responses from broker.
+     * Method to get message from the connection and verify message is not duplicate.
      *
-     * @param milliseconds interval
-     * @return byte[] array of message received
+     * @param milliseconds timeout interval
+     * @return byte array
      */
-    @Override
-    public byte[] poll(int milliseconds) {
+    protected byte[] getMessage(int milliseconds) {
         byte[] message = connection.receive(milliseconds);
         if (message != null) {
             ReqRes response = new ReqRes(message);
@@ -74,9 +89,6 @@ public class Consumer extends Client {
             }
             startingPosition = response.getOffset() + response.getKey().getBytes(StandardCharsets.UTF_8).length
                     + response.getData().length + 1;
-        } else {
-            connection.send(prepareRequest(topic, startingPosition));
-            LOGGER.info("pull request sent. topic: " + topic + ", starting position: " + startingPosition);
         }
         return message;
     }
