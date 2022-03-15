@@ -87,6 +87,7 @@ public class ConsumerDriver {
                     LOGGER.info("write to file: " + config.getTopic() + suffix + Constants.FILE_TYPE + ", offset: " + response.getOffset());
                 }
             }
+            bw.flush();
         } catch (IOException e) {
             LOGGER.error(e.getMessage());
         }
