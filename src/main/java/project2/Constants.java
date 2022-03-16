@@ -65,7 +65,7 @@ public class Constants {
     /**
      * timeout interval.
      */
-    public static final int TIME_OUT = 100;
+    public static final int TIME_OUT = 1000;
     /**
      * zk base path.
      */

@@ -54,7 +54,6 @@ public class Consumer extends Client {
      * @param milliseconds interval
      * @return byte[] array of message received
      */
-    @Override
     public byte[] poll(int milliseconds) {
         byte[] message = getMessage(milliseconds);
         if (message == null) {

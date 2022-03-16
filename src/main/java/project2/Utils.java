@@ -64,7 +64,7 @@ public class Utils {
                 deleteFiles(file);
             }
         }
-        if (!dir.delete()) {
+        if (dir.exists() && !dir.delete()) {
             LOGGER.error("can't delete: " + dir);
         }
     }

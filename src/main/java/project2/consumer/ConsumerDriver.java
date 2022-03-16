@@ -3,7 +3,6 @@ package project2.consumer;
 import com.google.gson.Gson;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import project2.Client;
 import project2.Config;
 import project2.Constants;
 import project2.Utils;
@@ -42,10 +41,10 @@ public class ConsumerDriver {
             config.validate();
             Curator curator = new Curator(config.getZkConnection());
             Collection<BrokerMetadata> brokers = curator.findBrokers();
-            Map<Client, Integer> clients = createConsumers(brokers, config);
+            Map<Consumer, Integer> clients = createConsumers(brokers, config);
 
             List<Thread> threads = new ArrayList<>();
-            for (Client consumer : clients.keySet()) {
+            for (Consumer consumer : clients.keySet()) {
                 Thread t = new Thread(() -> request(consumer, config, clients.get(consumer)));
                 t.start();
                 threads.add(t);
@@ -57,7 +56,7 @@ public class ConsumerDriver {
                 for (Thread t : threads) {
                     t.join();
                 }
-                for (Client consumer : clients.keySet()) {
+                for (Consumer consumer : clients.keySet()) {
                     consumer.close();
                 }
                 curator.close();
@@ -75,7 +74,7 @@ public class ConsumerDriver {
      * @param config   config
      * @param suffix   suffix
      */
-    private static void request(Client consumer, Config config, int suffix) {
+    private static void request(Consumer consumer, Config config, int suffix) {
         try (BufferedWriter bw = new BufferedWriter(new FileWriter(config.getTopic() + suffix + Constants.FILE_TYPE))) {
             while (isRunning) {
                 byte[] data = consumer.poll(Constants.TIME_OUT);
@@ -101,12 +100,12 @@ public class ConsumerDriver {
      * @param config  config
      * @return map between consumer and the partition it's pulling from
      */
-    private static Map<Client, Integer> createConsumers(Collection<BrokerMetadata> brokers, Config config) {
-        Map<Client, Integer> clients = new HashMap<>();
+    private static Map<Consumer, Integer> createConsumers(Collection<BrokerMetadata> brokers, Config config) {
+        Map<Consumer, Integer> clients = new HashMap<>();
         for (int i = 0; i < config.getNumPartitions(); i++) {
             BrokerMetadata broker = findBroker(brokers, i);
             if (broker != null) {
-                Client consumer;
+                Consumer consumer;
                 if (config.isPull()) {
                     consumer = new Consumer(broker.getListenAddress(), broker.getListenPort(),
                             config.getTopic(), config.getPosition(), i);
