@@ -55,27 +55,17 @@ public class Utils {
     /**
      * Method to traverse the folder and delete log files in the folder.
      *
-     * @param name folder name
+     * @param dir folder name
      */
-    public static void deleteFiles(String name) {
-        File folder = new File(name);
-        if (folder.exists()) {
-            String[] subFolders = folder.list();
-            if (subFolders != null) {
-                for (String f : subFolders) {
-                    File subFolder = new File(name + f);
-                    String[] fileNames = subFolder.list();
-                    if (fileNames != null) {
-                        for (String file : fileNames) {
-                            File currentFile = new File(subFolder.getPath(), file);
-                            if (!currentFile.delete()) {
-                                LOGGER.error("deleteFiles(): " + currentFile.getPath());
-                            }
-                        }
-                    }
-                }
+    public static void deleteFiles(File dir) {
+        File[] files = dir.listFiles();
+        if (files != null) {
+            for (File file : files) {
+                deleteFiles(file);
             }
-
+        }
+        if (dir.exists() && !dir.delete()) {
+            LOGGER.error("can't delete: " + dir);
         }
     }
 

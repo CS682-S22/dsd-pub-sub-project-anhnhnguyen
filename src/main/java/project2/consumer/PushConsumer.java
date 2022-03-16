@@ -19,12 +19,13 @@ public class PushConsumer extends Consumer {
      * @param port             port
      * @param topic            topic
      * @param startingPosition starting position
+     * @param partition        partition
      */
-    public PushConsumer(String host, int port, String topic, long startingPosition) {
-        super(host, port, topic, startingPosition);
-        connection.send(prepareRequest(topic, startingPosition, (byte) Constants.SUB_REQ));
+    public PushConsumer(String host, int port, String topic, long startingPosition, int partition) {
+        super(host, port, topic, startingPosition, partition);
+        connection.send(prepareRequest(topic, startingPosition, (byte) Constants.SUB_REQ, partition));
         Logger logger = LoggerFactory.getLogger(PushConsumer.class);
-        logger.info("subscribe request sent. topic: " + topic);
+        logger.info("subscribe request sent. topic: " + topic + ", partition: " + partition + ", starting offset: " + startingPosition);
     }
 
     /**

@@ -2,6 +2,7 @@ package project2.producer;
 
 import project2.Utils;
 
+import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 
 /**
@@ -22,11 +23,15 @@ public class PubReq {
      * data.
      */
     private final byte[] data;
+    /**
+     * number of topic partitions.
+     */
+    private final int numPartitions;
 
     /**
      * Constructor.
      * <p>
-     * Extracting byte array in the form of [1-byte message type] | [topic] | 0 | [key] | 0 | [data]
+     * Extracting byte array in the form of [1-byte message type] | [topic] | 0 | [key] | 0 | [data] | 0 | [2-byte number of partitions]
      *
      * @param message byte array
      */
@@ -40,7 +45,11 @@ public class PubReq {
         this.key = new String(keyBytes, StandardCharsets.UTF_8);
 
         index += keyBytes.length + 1;
-        this.data = Utils.extractBytes(index, message.length, message, false);
+        this.data = Utils.extractBytes(index, message.length, message, true);
+
+        index += data.length + 1;
+        byte[] numPartitionsBytes = Utils.extractBytes(index, message.length, message, false);
+        this.numPartitions = new BigInteger(numPartitionsBytes).intValue();
     }
 
     /**
@@ -68,5 +77,14 @@ public class PubReq {
      */
     public byte[] getData() {
         return data;
+    }
+
+    /**
+     * Getter for number of partitions.
+     *
+     * @return numPartitions
+     */
+    public int getNumPartitions() {
+        return numPartitions;
     }
 }

@@ -3,7 +3,6 @@ package project2.consumer;
 import com.google.gson.Gson;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import project2.Client;
 import project2.Config;
 import project2.Constants;
 import project2.Utils;
@@ -42,11 +41,11 @@ public class ConsumerDriver {
             config.validate();
             Curator curator = new Curator(config.getZkConnection());
             Collection<BrokerMetadata> brokers = curator.findBrokers();
-            Map<Client, Integer> partitionMap = createConsumers(brokers, config);
+            Map<Consumer, Integer> clients = createConsumers(brokers, config);
 
             List<Thread> threads = new ArrayList<>();
-            for (Client consumer : partitionMap.keySet()) {
-                Thread t = new Thread(() -> request(consumer, config, partitionMap.get(consumer)));
+            for (Consumer consumer : clients.keySet()) {
+                Thread t = new Thread(() -> request(consumer, config, clients.get(consumer)));
                 t.start();
                 threads.add(t);
             }
@@ -57,7 +56,7 @@ public class ConsumerDriver {
                 for (Thread t : threads) {
                     t.join();
                 }
-                for (Client consumer : partitionMap.keySet()) {
+                for (Consumer consumer : clients.keySet()) {
                     consumer.close();
                 }
                 curator.close();
@@ -75,7 +74,7 @@ public class ConsumerDriver {
      * @param config   config
      * @param suffix   suffix
      */
-    private static void request(Client consumer, Config config, int suffix) {
+    private static void request(Consumer consumer, Config config, int suffix) {
         try (BufferedWriter bw = new BufferedWriter(new FileWriter(config.getTopic() + suffix + Constants.FILE_TYPE))) {
             while (isRunning) {
                 byte[] data = consumer.poll(Constants.TIME_OUT);
@@ -85,8 +84,7 @@ public class ConsumerDriver {
                             + new String(response.getData(), StandardCharsets.UTF_8));
                     bw.newLine();
                     bw.flush();
-                    LOGGER.info("write to file: " + config.getTopic() + suffix + Constants.FILE_TYPE + ", offset: " + response.getOffset()
-                            + ", key length: " + response.getKey().length() + ", data length: " + new String(response.getData(), StandardCharsets.UTF_8).length());
+                    LOGGER.info("write to file: " + config.getTopic() + suffix + Constants.FILE_TYPE + ", offset: " + response.getOffset());
                 }
             }
             bw.flush();
@@ -102,19 +100,38 @@ public class ConsumerDriver {
      * @param config  config
      * @return map between consumer and the partition it's pulling from
      */
-    private static Map<Client, Integer> createConsumers(Collection<BrokerMetadata> brokers, Config config) {
-        Map<Client, Integer> partitionMap = new HashMap<>();
-        for (BrokerMetadata broker : brokers) {
-            Client consumer;
-            if (config.isPull()) {
-                consumer = new Consumer(broker.getListenAddress(), broker.getListenPort(),
-                        config.getTopic(), config.getPosition());
-            } else {
-                consumer = new PushConsumer(broker.getListenAddress(), broker.getListenPort(),
-                        config.getTopic(), config.getPosition());
+    private static Map<Consumer, Integer> createConsumers(Collection<BrokerMetadata> brokers, Config config) {
+        Map<Consumer, Integer> clients = new HashMap<>();
+        for (int i = 0; i < config.getNumPartitions(); i++) {
+            BrokerMetadata broker = findBroker(brokers, i);
+            if (broker != null) {
+                Consumer consumer;
+                if (config.isPull()) {
+                    consumer = new Consumer(broker.getListenAddress(), broker.getListenPort(),
+                            config.getTopic(), config.getPosition(), i);
+                } else {
+                    consumer = new PushConsumer(broker.getListenAddress(), broker.getListenPort(),
+                            config.getTopic(), config.getPosition(), i);
+                }
+                clients.put(consumer, i);
             }
-            partitionMap.put(consumer, broker.getPartition());
         }
-        return partitionMap;
+        return clients;
+    }
+
+    /**
+     * Method to find broker that stores the partition.
+     *
+     * @param brokers   list of brokers
+     * @param partition partition
+     * @return broker that store the partition
+     */
+    private static BrokerMetadata findBroker(Collection<BrokerMetadata> brokers, int partition) {
+        for (BrokerMetadata broker : brokers) {
+            if (broker.getPartition() == partition % brokers.size()) {
+                return broker;
+            }
+        }
+        return null;
     }
 }

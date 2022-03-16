@@ -12,7 +12,10 @@ import project2.producer.PubReq;
 import project2.zookeeper.BrokerRegister;
 import project2.zookeeper.InstanceSerializerFactory;
 
-import java.io.*;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousServerSocketChannel;
@@ -46,9 +49,9 @@ public class Broker {
      */
     private volatile boolean isRunning;
     /**
-     * a hashmap that maps topic to a list of offsets in the topic and a list of first offset in segment files.
+     * a hashmap that maps topic to a map between partition number and list of offsets in the topic and a list of first offset in segment files.
      */
-    private final Map<String, List<List<Long>>> topics;
+    private final Map<String, Map<Integer, List<List<Long>>>> topics;
     /**
      * broker register.
      */
@@ -59,9 +62,9 @@ public class Broker {
      */
     private final Map<String, Lock> locks;
     /**
-     * list of subscribers.
+     * list of subscribers by partition in topic.
      */
-    private final Map<String, CopyOnWriteArrayList<Connection>> subscribers;
+    private final Map<String, Map<Integer, CopyOnWriteArrayList<Connection>>> subscribers;
     /**
      * lock map for connection.
      */
@@ -93,8 +96,8 @@ public class Broker {
                 new InstanceSerializerFactory(objectMapper.reader(), objectMapper.writer()),
                 Constants.SERVICE_NAME, host, port, partition);
         brokerRegister.registerAvailability();
-        Utils.deleteFiles(Constants.TMP_FOLDER);
-        Utils.deleteFiles(Constants.LOG_FOLDER);
+        Utils.deleteFiles(new File(Constants.TMP_FOLDER));
+        Utils.deleteFiles(new File(Constants.LOG_FOLDER));
         Utils.createFolder(Constants.TMP_FOLDER);
         Utils.createFolder(Constants.LOG_FOLDER);
     }
@@ -176,16 +179,25 @@ public class Broker {
         Lock lock = locks.computeIfAbsent(topic, t -> new ReentrantLock());
         lock.lock();
         try {
-            List<List<Long>> indexes;
+            Map<Integer, List<List<Long>>> partitionMap;
             if (topics.containsKey(topic)) {
-                indexes = topics.get(topic);
+                partitionMap = topics.get(topic);
+            } else {
+                partitionMap = new HashMap<>();
+                topics.put(topic, partitionMap);
+            }
+
+            int partition = pubReq.getKey().hashCode() % pubReq.getNumPartitions();
+            List<List<Long>> indexes;
+            if (partitionMap.containsKey(partition)) {
+                indexes = partitionMap.get(partition);
             } else {
                 indexes = new ArrayList<>();
-                topics.put(topic, indexes);
+                partitionMap.put(partition, indexes);
             }
 
             if (indexes.size() == 0) {
-                initializeTopic(indexes, topic);
+                initializeTopic(indexes, topic, partition);
             }
 
             // add next message's id to the offset list
@@ -196,12 +208,13 @@ public class Broker {
             // create new segment file if necessary and add the current offset to the list of starting offsets
             long currentFile = indexes.get(Constants.STARTING_OFFSET_INDEX).get(indexes.get(Constants.STARTING_OFFSET_INDEX).size() - 1);
             if (offset - currentFile > Constants.SEGMENT_SIZE) {
-                initializeSegmentFile(topic, currentFile, indexes, current);
+                initializeSegmentFile(topic, currentFile, indexes, current, partition);
                 currentFile = current;
             }
 
             // write key and data to file
-            String activeFile = Constants.TMP_FOLDER + topic + Constants.PATH_STRING + currentFile + Constants.FILE_TYPE;
+            String activeFile = Constants.TMP_FOLDER + topic + Constants.PATH_STRING + partition +
+                    Constants.PATH_STRING + currentFile + Constants.FILE_TYPE;
             try (FileOutputStream fos = new FileOutputStream(activeFile, true)) {
                 fos.write(pubReq.getKey().getBytes(StandardCharsets.UTF_8));
                 fos.write(0);
@@ -211,22 +224,27 @@ public class Broker {
                 LOGGER.error("processPubReq(): " + e.getMessage());
             }
 
-            LOGGER.info("data added to topic: " + topic + ", key: " + pubReq.getKey() + ", offset: " + current);
+            LOGGER.info("data added to topic: " + topic + ", partition: " + partition + ", key: " + pubReq.getKey() + ", offset: " + current);
         } finally {
             lock.unlock();
         }
     }
 
     /**
-     * Method to initialize folder in tmp/ folder for a topic, file output stream to write to segment file in this folder,
+     * Method to initialize folder in tmp/ folder for a partition in a topic, file output stream to write to segment file in this folder,
      * 2 lists to store the offsets in the topic and the starting offsets for first message in each segment file.
      *
-     * @param indexes the list linked with the topic
-     * @param topic   the topic
+     * @param indexes   the list linked with the topic
+     * @param topic     the topic
+     * @param partition partition number
      */
-    private void initializeTopic(List<List<Long>> indexes, String topic) {
+    private void initializeTopic(List<List<Long>> indexes, String topic, int partition) {
         // create tmp folder for the topic
-        String folder = Constants.TMP_FOLDER + topic + Constants.PATH_STRING;
+        String topicFolder = Constants.TMP_FOLDER + topic + Constants.PATH_STRING;
+        Utils.createFolder(topicFolder);
+
+        // create tmp partition folder for the topic
+        String folder = topicFolder + partition + Constants.PATH_STRING;
         Utils.createFolder(folder);
 
         // initialize the offset list for the topic
@@ -252,23 +270,27 @@ public class Broker {
      * @param currentFile current segment file's first message offset
      * @param indexes     indexes mapped to the topic
      * @param current     current offset
+     * @param partition   partition number
      */
-    private void initializeSegmentFile(String topic, long currentFile, List<List<Long>> indexes, long current) {
+    private void initializeSegmentFile(String topic, long currentFile, List<List<Long>> indexes, long current, int partition) {
         try {
-            String folder = Constants.LOG_FOLDER + topic + Constants.PATH_STRING;
+            String logFolder = Constants.LOG_FOLDER + topic + Constants.PATH_STRING;
+            Utils.createFolder(logFolder);
+            String folder = logFolder + partition + Constants.PATH_STRING;
             Utils.createFolder(folder);
             File permFile = new File(folder + currentFile + Constants.FILE_TYPE);
-            Files.move(new File(Constants.TMP_FOLDER + topic + Constants.PATH_STRING + currentFile
-                    + Constants.FILE_TYPE).toPath(), permFile.toPath());
+            Files.move(new File(Constants.TMP_FOLDER + topic + Constants.PATH_STRING + partition
+                    + Constants.PATH_STRING + currentFile + Constants.FILE_TYPE).toPath(), permFile.toPath());
             LOGGER.info("flushed segment file: " + permFile.toPath());
 
             // thread to send subscribers messages when segment file is flushed to disk
             if (subscribers.containsKey(topic)) {
-                Thread t = new Thread(() -> sendToSubscribers(topic, permFile, currentFile));
+                Thread t = new Thread(() -> sendToSubscribers(topic, permFile, currentFile, partition));
                 t.start();
             }
 
-            String fileName = Constants.TMP_FOLDER + topic + Constants.PATH_STRING + current + Constants.FILE_TYPE;
+            String fileName = Constants.TMP_FOLDER + topic + Constants.PATH_STRING + partition +
+                    Constants.PATH_STRING + current + Constants.FILE_TYPE;
             LOGGER.info("start writing to segment file: " + fileName);
             indexes.get(Constants.STARTING_OFFSET_INDEX).add(current);
         } catch (IOException e) {
@@ -282,14 +304,15 @@ public class Broker {
      * @param topic       topic
      * @param permFile    persistent file
      * @param currentFile offset of the first message in the persistent file
+     * @param partition   partition
      */
-    private void sendToSubscribers(String topic, File permFile, long currentFile) {
-        List<Connection> connections = subscribers.get(topic);
+    private void sendToSubscribers(String topic, File permFile, long currentFile, int partition) {
+        List<Connection> connections = subscribers.get(topic).get(partition);
         for (Connection connection : connections) {
             Lock lock = connectionLockMap.computeIfAbsent(connection, l -> new ReentrantLock());
             lock.lock();
             try {
-                sendToSubscriber(permFile.getPath(), currentFile, topic, connection);
+                sendToSubscriber(permFile.getPath(), currentFile, topic, connection, partition);
             } finally {
                 lock.unlock();
             }
@@ -303,10 +326,11 @@ public class Broker {
      * @param currentFile offset of the first message in the segment file
      * @param topic       topic
      * @param connection  connection
+     * @param partition   partition
      */
-    private void sendToSubscriber(String fileName, long currentFile, String topic, Connection connection) {
+    private void sendToSubscriber(String fileName, long currentFile, String topic, Connection connection, int partition) {
         try {
-            List<Long> offSetList = topics.get(topic).get(Constants.OFFSET_INDEX);
+            List<Long> offSetList = topics.get(topic).get(partition).get(Constants.OFFSET_INDEX);
             int index = Arrays.binarySearch(offSetList.toArray(), currentFile);
             RandomAccessFile raf = new RandomAccessFile(fileName, "r");
             long length = raf.length();
@@ -314,7 +338,7 @@ public class Broker {
             while (readSofar < length) {
                 long position = offSetList.get(index) - currentFile;
                 long messageLength = offSetList.get(index + 1) - offSetList.get(index);
-                sendData(connection, messageLength, offSetList.get(index), position, topic, raf);
+                sendData(connection, messageLength, offSetList.get(index), position, topic, raf, partition);
                 readSofar += messageLength;
                 index++;
             }
@@ -335,9 +359,9 @@ public class Broker {
         PullReq pullReq = new PullReq(request);
         String topic = pullReq.getTopic();
         long startingPosition = pullReq.getStartingPosition();
-        LOGGER.info("pull request. topic: " + topic + ", starting position: " + startingPosition);
+        LOGGER.info("pull request. topic: " + topic + ", partition: " + pullReq.getPartition() + ", starting position: " + startingPosition);
         if (topics.containsKey(topic)) {
-            List<List<Long>> list = topics.get(topic);
+            List<List<Long>> list = topics.get(topic).get(pullReq.getPartition());
             if (list.size() == 2) {
                 List<Long> offSetList = list.get(Constants.OFFSET_INDEX);
                 List<Long> startingOffsetList = list.get(Constants.STARTING_OFFSET_INDEX);
@@ -367,14 +391,15 @@ public class Broker {
                         if (fileIndex < 0) {
                             fileIndex = -(fileIndex + 1) - 1;
                         }
-                        String fileName = Constants.LOG_FOLDER + topic + Constants.PATH_STRING + startingOffsetList.get(fileIndex) + Constants.FILE_TYPE;
+                        String fileName = Constants.LOG_FOLDER + topic + Constants.PATH_STRING + pullReq.getPartition() +
+                                Constants.PATH_STRING + startingOffsetList.get(fileIndex) + Constants.FILE_TYPE;
                         // only expose to consumer when data is flushed to disk, so need to check the log/ folder
                         if (Files.exists(Paths.get(fileName))) {
                             try {
                                 long length = offSetList.get(index + 1) - offSetList.get(index);
                                 long position = offSetList.get(index) - startingOffsetList.get(fileIndex);
                                 RandomAccessFile raf = new RandomAccessFile(fileName, "r");
-                                sendData(connection, length, offset, position, topic, raf);
+                                sendData(connection, length, offset, position, topic, raf, pullReq.getPartition());
                                 index++;
                                 count++;
                                 raf.close();
@@ -397,8 +422,9 @@ public class Broker {
      * @param length     length of message
      * @param position   position
      * @param offset     offset of message
+     * @param partition  partition
      */
-    private void sendData(Connection connection, long length, long offset, long position, String topic, RandomAccessFile raf) {
+    private void sendData(Connection connection, long length, long offset, long position, String topic, RandomAccessFile raf, int partition) {
         try {
             byte[] data = new byte[(int) length];
             raf.seek(position);
@@ -408,7 +434,7 @@ public class Broker {
             response.putLong(offset);
             response.put(data);
             connection.send(response.array());
-            LOGGER.info("data at offset: " + offset + " from topic: " + topic + " sent" + Arrays.toString(data));
+            LOGGER.info("data at offset: " + offset + " from topic: " + topic + ", partition: " + partition + " sent");
         } catch (IOException e) {
             LOGGER.error("sendData(): " + e.getMessage());
         }
@@ -421,13 +447,22 @@ public class Broker {
      * @param request    request
      */
     private void addSubscriber(Connection connection, byte[] request) {
-        String topic = new String(Utils.extractBytes(1, request.length, request, true),
-                StandardCharsets.UTF_8);
+        PullReq pullReq = new PullReq(request);
+        String topic = pullReq.getTopic();
         // Reference: https://stackoverflow.com/questions/18605876/concurrent-hashmap-and-copyonwritearraylist
-        CopyOnWriteArrayList<Connection> copy = subscribers.get(topic);
+        Map<Integer, CopyOnWriteArrayList<Connection>> copyMap = subscribers.get(topic);
+        if (copyMap == null) {
+            copyMap = new ConcurrentHashMap<>();
+            Map<Integer, CopyOnWriteArrayList<Connection>> inMap = subscribers.putIfAbsent(topic, copyMap);
+            if (inMap != null) {
+                copyMap = inMap;
+            }
+        }
+        int partition = pullReq.getPartition();
+        CopyOnWriteArrayList<Connection> copy = copyMap.get(partition);
         if (copy == null) {
             copy = new CopyOnWriteArrayList<>();
-            CopyOnWriteArrayList<Connection> inMap = subscribers.putIfAbsent(topic, copy);
+            CopyOnWriteArrayList<Connection> inMap = copyMap.putIfAbsent(partition, copy);
             if (inMap != null) {
                 copy = inMap;
             }

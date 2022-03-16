@@ -65,7 +65,7 @@ public class Constants {
     /**
      * timeout interval.
      */
-    public static final int TIME_OUT = 100;
+    public static final int TIME_OUT = 1000;
     /**
      * zk base path.
      */
@@ -74,4 +74,8 @@ public class Constants {
      * service name.
      */
     public static final String SERVICE_NAME = "pubsub";
+    /**
+     * default number of partitions.
+     */
+    public static final int NUM_PARTS = 3;
 }
