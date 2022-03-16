@@ -62,9 +62,9 @@ public class Broker {
      */
     private final Map<String, Lock> locks;
     /**
-     * list of subscribers.
+     * list of subscribers by partition in topic.
      */
-    private final Map<String, CopyOnWriteArrayList<Connection>> subscribers;
+    private final Map<String, Map<Integer, CopyOnWriteArrayList<Connection>>> subscribers;
     /**
      * lock map for connection.
      */
@@ -97,7 +97,7 @@ public class Broker {
                 Constants.SERVICE_NAME, host, port, partition);
         brokerRegister.registerAvailability();
         Utils.deleteFiles(new File(Constants.TMP_FOLDER));
-        Utils.deleteFiles(new File (Constants.LOG_FOLDER));
+        Utils.deleteFiles(new File(Constants.LOG_FOLDER));
         Utils.createFolder(Constants.TMP_FOLDER);
         Utils.createFolder(Constants.LOG_FOLDER);
     }
@@ -150,10 +150,7 @@ public class Broker {
             processPubReq(request);
         }
         if (request[0] == Constants.PULL_REQ) {
-            PullReq pullReq = new PullReq(request);
-            for (int partition : topics.get(pullReq.getTopic()).keySet()) {
-                processPullReq(connection, request, Constants.NUM_RESPONSE, partition);
-            }
+            processPullReq(connection, request, Constants.NUM_RESPONSE);
         }
         if (request[0] == Constants.SUB_REQ) {
             addSubscriber(connection, request);
@@ -222,14 +219,12 @@ public class Broker {
                 fos.write(pubReq.getKey().getBytes(StandardCharsets.UTF_8));
                 fos.write(0);
                 fos.write(pubReq.getData());
-                fos.write(0);
-                fos.write(partition);
                 fos.flush();
             } catch (IOException e) {
                 LOGGER.error("processPubReq(): " + e.getMessage());
             }
 
-            LOGGER.info("data added to topic: " + topic + ", key: " + pubReq.getKey() + ", offset: " + current);
+            LOGGER.info("data added to topic: " + topic + ", partition: " + partition + ", key: " + pubReq.getKey() + ", offset: " + current);
         } finally {
             lock.unlock();
         }
@@ -312,7 +307,7 @@ public class Broker {
      * @param partition   partition
      */
     private void sendToSubscribers(String topic, File permFile, long currentFile, int partition) {
-        List<Connection> connections = subscribers.get(topic);
+        List<Connection> connections = subscribers.get(topic).get(partition);
         for (Connection connection : connections) {
             Lock lock = connectionLockMap.computeIfAbsent(connection, l -> new ReentrantLock());
             lock.lock();
@@ -343,7 +338,7 @@ public class Broker {
             while (readSofar < length) {
                 long position = offSetList.get(index) - currentFile;
                 long messageLength = offSetList.get(index + 1) - offSetList.get(index);
-                sendData(connection, messageLength, offSetList.get(index), position, topic, raf);
+                sendData(connection, messageLength, offSetList.get(index), position, topic, raf, partition);
                 readSofar += messageLength;
                 index++;
             }
@@ -359,15 +354,14 @@ public class Broker {
      *
      * @param connection connection
      * @param request    request
-     * @param partition  partition
      */
-    private void processPullReq(Connection connection, byte[] request, int numMessages, int partition) {
+    private void processPullReq(Connection connection, byte[] request, int numMessages) {
         PullReq pullReq = new PullReq(request);
         String topic = pullReq.getTopic();
         long startingPosition = pullReq.getStartingPosition();
-        LOGGER.info("pull request. topic: " + topic + ", starting position: " + startingPosition);
+        LOGGER.info("pull request. topic: " + topic + ", partition: " + pullReq.getPartition() + ", starting position: " + startingPosition);
         if (topics.containsKey(topic)) {
-            List<List<Long>> list = topics.get(topic).get(partition);
+            List<List<Long>> list = topics.get(topic).get(pullReq.getPartition());
             if (list.size() == 2) {
                 List<Long> offSetList = list.get(Constants.OFFSET_INDEX);
                 List<Long> startingOffsetList = list.get(Constants.STARTING_OFFSET_INDEX);
@@ -397,14 +391,15 @@ public class Broker {
                         if (fileIndex < 0) {
                             fileIndex = -(fileIndex + 1) - 1;
                         }
-                        String fileName = Constants.LOG_FOLDER + topic + Constants.PATH_STRING + startingOffsetList.get(fileIndex) + Constants.FILE_TYPE;
+                        String fileName = Constants.LOG_FOLDER + topic + Constants.PATH_STRING + pullReq.getPartition() +
+                                Constants.PATH_STRING + startingOffsetList.get(fileIndex) + Constants.FILE_TYPE;
                         // only expose to consumer when data is flushed to disk, so need to check the log/ folder
                         if (Files.exists(Paths.get(fileName))) {
                             try {
                                 long length = offSetList.get(index + 1) - offSetList.get(index);
                                 long position = offSetList.get(index) - startingOffsetList.get(fileIndex);
                                 RandomAccessFile raf = new RandomAccessFile(fileName, "r");
-                                sendData(connection, length, offset, position, topic, raf);
+                                sendData(connection, length, offset, position, topic, raf, pullReq.getPartition());
                                 index++;
                                 count++;
                                 raf.close();
@@ -427,8 +422,9 @@ public class Broker {
      * @param length     length of message
      * @param position   position
      * @param offset     offset of message
+     * @param partition  partition
      */
-    private void sendData(Connection connection, long length, long offset, long position, String topic, RandomAccessFile raf) {
+    private void sendData(Connection connection, long length, long offset, long position, String topic, RandomAccessFile raf, int partition) {
         try {
             byte[] data = new byte[(int) length];
             raf.seek(position);
@@ -438,7 +434,7 @@ public class Broker {
             response.putLong(offset);
             response.put(data);
             connection.send(response.array());
-            LOGGER.info("data at offset: " + offset + " from topic: " + topic + " sent" + Arrays.toString(data));
+            LOGGER.info("data at offset: " + offset + " from topic: " + topic + ", partition: " + partition + " sent");
         } catch (IOException e) {
             LOGGER.error("sendData(): " + e.getMessage());
         }
@@ -451,13 +447,22 @@ public class Broker {
      * @param request    request
      */
     private void addSubscriber(Connection connection, byte[] request) {
-        String topic = new String(Utils.extractBytes(1, request.length, request, true),
-                StandardCharsets.UTF_8);
+        PullReq pullReq = new PullReq(request);
+        String topic = pullReq.getTopic();
         // Reference: https://stackoverflow.com/questions/18605876/concurrent-hashmap-and-copyonwritearraylist
-        CopyOnWriteArrayList<Connection> copy = subscribers.get(topic);
+        Map<Integer, CopyOnWriteArrayList<Connection>> copyMap = subscribers.get(topic);
+        if (copyMap == null) {
+            copyMap = new ConcurrentHashMap<>();
+            Map<Integer, CopyOnWriteArrayList<Connection>> inMap = subscribers.putIfAbsent(topic, copyMap);
+            if (inMap != null) {
+                copyMap = inMap;
+            }
+        }
+        int partition = pullReq.getPartition();
+        CopyOnWriteArrayList<Connection> copy = copyMap.get(partition);
         if (copy == null) {
             copy = new CopyOnWriteArrayList<>();
-            CopyOnWriteArrayList<Connection> inMap = subscribers.putIfAbsent(topic, copy);
+            CopyOnWriteArrayList<Connection> inMap = copyMap.putIfAbsent(partition, copy);
             if (inMap != null) {
                 copy = inMap;
             }
@@ -469,9 +474,7 @@ public class Broker {
         Lock lock = connectionLockMap.computeIfAbsent(connection, l -> new ReentrantLock());
         lock.lock();
         try {
-            for (int partition : topics.get(topic).keySet()) {
-                processPullReq(connection, request, 0, partition);
-            }
+            processPullReq(connection, request, 0);
         } finally {
             lock.unlock();
         }

@@ -27,6 +27,10 @@ public class Consumer extends Client {
      * starting position.
      */
     protected long startingPosition;
+    /**
+     * partition.
+     */
+    protected final int partition;
 
     /**
      * Constructor.
@@ -35,11 +39,13 @@ public class Consumer extends Client {
      * @param port             port
      * @param topic            topic
      * @param startingPosition starting position
+     * @param partition        partition
      */
-    public Consumer(String host, int port, String topic, long startingPosition) {
+    public Consumer(String host, int port, String topic, long startingPosition, int partition) {
         super(host, port);
         this.topic = topic;
         this.startingPosition = startingPosition;
+        this.partition = partition;
     }
 
     /**
@@ -52,8 +58,8 @@ public class Consumer extends Client {
     public byte[] poll(int milliseconds) {
         byte[] message = getMessage(milliseconds);
         if (message == null) {
-            connection.send(prepareRequest(topic, startingPosition, (byte) Constants.PULL_REQ));
-            LOGGER.info("pull request sent. topic: " + topic + ", starting position: " + startingPosition);
+            connection.send(prepareRequest(topic, startingPosition, (byte) Constants.PULL_REQ, partition));
+            LOGGER.info("pull request sent. topic: " + topic + ", partition: " + partition + ", starting position: " + startingPosition);
         }
         return message;
     }
@@ -64,14 +70,15 @@ public class Consumer extends Client {
      * @param topic            topic
      * @param startingPosition starting position
      * @param messageType      message type (Pull request or subscribe request)
-     * @return byte array in the form of [1-byte message type] | [topic] | 0 | [8-byte offset]
+     * @return byte array in the form of [1-byte message type] | [topic] | 0 | [8-byte offset] | [2-byte partition]
      */
-    protected byte[] prepareRequest(String topic, long startingPosition, byte messageType) {
-        ByteBuffer byteBuffer = ByteBuffer.allocate(topic.getBytes(StandardCharsets.UTF_8).length + 10);
+    protected byte[] prepareRequest(String topic, long startingPosition, byte messageType, int partition) {
+        ByteBuffer byteBuffer = ByteBuffer.allocate(topic.getBytes(StandardCharsets.UTF_8).length + 12);
         byteBuffer.put(messageType);
         byteBuffer.put(topic.getBytes(StandardCharsets.UTF_8));
         byteBuffer.put((byte) 0);
         byteBuffer.putLong(startingPosition);
+        byteBuffer.putShort((short) partition);
         return byteBuffer.array();
     }
 

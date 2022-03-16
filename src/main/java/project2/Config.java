@@ -45,6 +45,10 @@ public class Config {
      * topic map.
      */
     private final Map<String, Integer> topics;
+    /**
+     * number of partitions.
+     */
+    private final int numPartitions;
 
     /**
      * Constructor.
@@ -58,8 +62,8 @@ public class Config {
      * @param zkConnection zkConnection
      * @param isPull       isPull
      */
-    public Config(String host, int port, String file, String topic, long position,
-                  int partition, String zkConnection, boolean isPull, Map<String, Integer> topics) {
+    public Config(String host, int port, String file, String topic, long position, int partition,
+                  String zkConnection, boolean isPull, Map<String, Integer> topics, int numPartitions) {
         this.host = host;
         this.port = port;
         this.file = file;
@@ -69,6 +73,7 @@ public class Config {
         this.zkConnection = zkConnection;
         this.isPull = isPull;
         this.topics = topics;
+        this.numPartitions = numPartitions;
     }
 
     /**
@@ -145,9 +150,19 @@ public class Config {
 
     /**
      * Getter for topics map of topic with the number of partitions for each topic.
+     *
+     * @return topics
      */
     public Map<String, Integer> getTopics() {
         return topics;
+    }
+
+    /**
+     * Getter for number of partitions.
+     * @return numPartitions
+     */
+    public int getNumPartitions() {
+        return numPartitions;
     }
 
     /**

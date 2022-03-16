@@ -19,11 +19,15 @@ public class PullReq {
      * starting position.
      */
     private final long startingPosition;
+    /**
+     * partition.
+     */
+    private final int partition;
 
     /**
      * Constructor.
      * <p>
-     * Extracting byte array in the form of [1-byte message type] | [topic] | 0 | [8-byte offset]
+     * Extracting byte array in the form of [1-byte message type] | [topic] | 0 | [8-byte offset] | [2-byte partition]
      *
      * @param message byte array
      */
@@ -33,7 +37,8 @@ public class PullReq {
         this.topic = new String(topicBytes, StandardCharsets.UTF_8);
 
         index += topicBytes.length + 1;
-        this.startingPosition = new BigInteger(Utils.extractBytes(index, message.length, message, false)).longValue();
+        this.startingPosition = new BigInteger(Utils.extractBytes(index, index + 8, message, false)).longValue();
+        this.partition = new BigInteger(Utils.extractBytes(index + 8, message.length, message, false)).intValue();
     }
 
     /**
@@ -52,5 +57,13 @@ public class PullReq {
      */
     public long getStartingPosition() {
         return startingPosition;
+    }
+
+    /**
+     * Getter for partition.
+     * @return partition
+     */
+    public int getPartition() {
+        return partition;
     }
 }

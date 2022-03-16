@@ -31,7 +31,7 @@ public class PubReq {
     /**
      * Constructor.
      * <p>
-     * Extracting byte array in the form of [1-byte message type] | [topic] | 0 | [key] | 0 | [data]
+     * Extracting byte array in the form of [1-byte message type] | [topic] | 0 | [key] | 0 | [data] | 0 | [2-byte number of partitions]
      *
      * @param message byte array
      */
@@ -82,7 +82,7 @@ public class PubReq {
     /**
      * Getter for number of partitions.
      *
-     * @retun numPartitions
+     * @return numPartitions
      */
     public int getNumPartitions() {
         return numPartitions;
