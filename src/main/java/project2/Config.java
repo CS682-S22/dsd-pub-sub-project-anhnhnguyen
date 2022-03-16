@@ -1,6 +1,7 @@
 package project2;
 
 import java.io.File;
+import java.util.Map;
 
 /**
  * Class that extract configurations from JSON file.
@@ -40,6 +41,10 @@ public class Config {
      * boolean for pull/push consumer.
      */
     private final boolean isPull;
+    /**
+     * topic map.
+     */
+    private final Map<String, Integer> topics;
 
     /**
      * Constructor.
@@ -53,8 +58,8 @@ public class Config {
      * @param zkConnection zkConnection
      * @param isPull       isPull
      */
-    public Config(String host, int port, String file, String topic,
-                  long position, int partition, String zkConnection, boolean isPull) {
+    public Config(String host, int port, String file, String topic, long position,
+                  int partition, String zkConnection, boolean isPull, Map<String, Integer> topics) {
         this.host = host;
         this.port = port;
         this.file = file;
@@ -63,6 +68,7 @@ public class Config {
         this.partition = partition;
         this.zkConnection = zkConnection;
         this.isPull = isPull;
+        this.topics = topics;
     }
 
     /**
@@ -135,6 +141,13 @@ public class Config {
      */
     public boolean isPull() {
         return isPull;
+    }
+
+    /**
+     * Getter for topics map of topic with the number of partitions for each topic.
+     */
+    public Map<String, Integer> getTopics() {
+        return topics;
     }
 
     /**

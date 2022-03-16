@@ -74,4 +74,8 @@ public class Constants {
      * service name.
      */
     public static final String SERVICE_NAME = "pubsub";
+    /**
+     * default number of partitions.
+     */
+    public static final int NUM_PARTS = 3;
 }

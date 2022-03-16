@@ -32,13 +32,14 @@ public class Producer extends Client {
     /**
      * method to publish topic, key, and data to broker.
      *
-     * @param topic topic
-     * @param key   key
-     * @param data  data
+     * @param topic         topic
+     * @param key           key
+     * @param data          data
+     * @param numPartitions number of partitions
      */
-    public void send(String topic, String key, byte[] data) {
+    public void send(String topic, String key, byte[] data, int numPartitions) {
         int length = topic.getBytes(StandardCharsets.UTF_8).length
-                + key.getBytes(StandardCharsets.UTF_8).length + data.length + 3;
+                + key.getBytes(StandardCharsets.UTF_8).length + data.length + 6;
         ByteBuffer byteBuffer = ByteBuffer.allocate(length);
         byteBuffer.put((byte) Constants.PUB_REQ);
         byteBuffer.put(topic.getBytes(StandardCharsets.UTF_8));
@@ -46,6 +47,8 @@ public class Producer extends Client {
         byteBuffer.put(key.getBytes(StandardCharsets.UTF_8));
         byteBuffer.put((byte) 0);
         byteBuffer.put(data);
+        byteBuffer.put((byte) 0);
+        byteBuffer.putShort((short) numPartitions);
         LOGGER.info("message sent. topic: " + topic + ", key: "
                 + key + ", data: " + new String(data, StandardCharsets.UTF_8));
         connection.send(byteBuffer.array());
