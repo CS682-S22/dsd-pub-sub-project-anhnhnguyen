@@ -47,10 +47,6 @@ public class Constants {
      */
     public static final int SEGMENT_SIZE = 1024;
     /**
-     * temp folder.
-     */
-    public static final String TMP_FOLDER = "tmp/";
-    /**
      * persistent folder.
      */
     public static final String LOG_FOLDER = "log/";

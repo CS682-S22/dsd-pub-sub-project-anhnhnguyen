@@ -69,6 +69,10 @@ public class Broker {
      * lock map for connection.
      */
     private final Map<Connection, Lock> connectionLockMap;
+    /**
+     * in-memory data struture to store message before flushing to disk.
+     */
+    private final Map<String, Map<Integer, List<byte[]>>> tmp;
 
     /**
      * Start the broker to listen on the given host name and port number. Also delete old log files
@@ -82,6 +86,7 @@ public class Broker {
      */
     public Broker(String host, int port, int partition, CuratorFramework curatorFramework, ObjectMapper objectMapper) {
         this.topics = new HashMap<>();
+        this.tmp = new HashMap<>();
         this.locks = new ConcurrentHashMap<>();
         this.subscribers = new ConcurrentHashMap<>();
         this.connectionLockMap = new ConcurrentHashMap<>();
@@ -96,9 +101,7 @@ public class Broker {
                 new InstanceSerializerFactory(objectMapper.reader(), objectMapper.writer()),
                 Constants.SERVICE_NAME, host, port, partition);
         brokerRegister.registerAvailability();
-        Utils.deleteFiles(new File(Constants.TMP_FOLDER));
         Utils.deleteFiles(new File(Constants.LOG_FOLDER));
-        Utils.createFolder(Constants.TMP_FOLDER);
         Utils.createFolder(Constants.LOG_FOLDER);
     }
 
@@ -209,21 +212,15 @@ public class Broker {
             long currentFile = indexes.get(Constants.STARTING_OFFSET_INDEX).get(indexes.get(Constants.STARTING_OFFSET_INDEX).size() - 1);
             if (offset - currentFile > Constants.SEGMENT_SIZE) {
                 initializeSegmentFile(topic, currentFile, indexes, current, partition);
-                currentFile = current;
             }
 
-            // write key and data to file
-            String activeFile = Constants.TMP_FOLDER + topic + Constants.PATH_STRING + partition +
-                    Constants.PATH_STRING + currentFile + Constants.FILE_TYPE;
-            try (FileOutputStream fos = new FileOutputStream(activeFile, true)) {
-                fos.write(pubReq.getKey().getBytes(StandardCharsets.UTF_8));
-                fos.write(0);
-                fos.write(pubReq.getData());
-                fos.flush();
-            } catch (IOException e) {
-                LOGGER.error("processPubReq(): " + e.getMessage());
-            }
-
+            // append key and data to tmp
+            ByteBuffer byteBuffer = ByteBuffer.allocate(pubReq.getKey().getBytes(StandardCharsets.UTF_8).length +
+                    pubReq.getData().length + 1);
+            byteBuffer.put(pubReq.getKey().getBytes(StandardCharsets.UTF_8));
+            byteBuffer.put((byte) 0);
+            byteBuffer.put(pubReq.getData());
+            tmp.get(topic).get(partition).add(byteBuffer.array());
             LOGGER.info("data added to topic: " + topic + ", partition: " + partition + ", key: " + pubReq.getKey() + ", offset: " + current);
         } finally {
             lock.unlock();
@@ -239,13 +236,18 @@ public class Broker {
      * @param partition partition number
      */
     private void initializeTopic(List<List<Long>> indexes, String topic, int partition) {
-        // create tmp folder for the topic
-        String topicFolder = Constants.TMP_FOLDER + topic + Constants.PATH_STRING;
-        Utils.createFolder(topicFolder);
-
-        // create tmp partition folder for the topic
-        String folder = topicFolder + partition + Constants.PATH_STRING;
-        Utils.createFolder(folder);
+        // initialize the tmp data structure
+        Map<Integer, List<byte[]>> partitionMap;
+        if (tmp.containsKey(topic)) {
+            partitionMap = tmp.get(topic);
+        } else {
+            partitionMap = new HashMap<>();
+            tmp.put(topic, partitionMap);
+        }
+        List<byte[]> data = new ArrayList<>();
+        if (!partitionMap.containsKey(partition)) {
+            partitionMap.put(partition, data);
+        }
 
         // initialize the offset list for the topic
         List<Long> offsetList = new ArrayList<>();
@@ -256,10 +258,6 @@ public class Broker {
         List<Long> startingOffsetList = new ArrayList<>();
         startingOffsetList.add((long) 0);
         indexes.add(startingOffsetList);
-
-        // initialize the file output stream to write to the specific file
-        String fileName = folder + "0" + Constants.FILE_TYPE;
-        LOGGER.info("start writing to segment file: " + fileName);
     }
 
     /**
@@ -273,29 +271,28 @@ public class Broker {
      * @param partition   partition number
      */
     private void initializeSegmentFile(String topic, long currentFile, List<List<Long>> indexes, long current, int partition) {
-        try {
-            String logFolder = Constants.LOG_FOLDER + topic + Constants.PATH_STRING;
-            Utils.createFolder(logFolder);
-            String folder = logFolder + partition + Constants.PATH_STRING;
-            Utils.createFolder(folder);
-            File permFile = new File(folder + currentFile + Constants.FILE_TYPE);
-            Files.move(new File(Constants.TMP_FOLDER + topic + Constants.PATH_STRING + partition
-                    + Constants.PATH_STRING + currentFile + Constants.FILE_TYPE).toPath(), permFile.toPath());
-            LOGGER.info("flushed segment file: " + permFile.toPath());
-
-            // thread to send subscribers messages when segment file is flushed to disk
-            if (subscribers.containsKey(topic)) {
-                Thread t = new Thread(() -> sendToSubscribers(topic, permFile, currentFile, partition));
-                t.start();
+        String logFolder = Constants.LOG_FOLDER + topic + Constants.PATH_STRING;
+        Utils.createFolder(logFolder);
+        String folder = logFolder + partition + Constants.PATH_STRING;
+        Utils.createFolder(folder);
+        File permFile = new File(folder + currentFile + Constants.FILE_TYPE);
+        try (FileOutputStream fos = new FileOutputStream(permFile, true)) {
+            List<byte[]> data = tmp.get(topic).get(partition);
+            while (data.size() != 0) {
+                fos.write(data.remove(0));
+                fos.flush();
             }
-
-            String fileName = Constants.TMP_FOLDER + topic + Constants.PATH_STRING + partition +
-                    Constants.PATH_STRING + current + Constants.FILE_TYPE;
-            LOGGER.info("start writing to segment file: " + fileName);
-            indexes.get(Constants.STARTING_OFFSET_INDEX).add(current);
         } catch (IOException e) {
             LOGGER.error("initializeSegmentFile(): " + e.getMessage());
         }
+        LOGGER.info("flushed segment file: " + permFile.toPath());
+
+        // thread to send subscribers messages when segment file is flushed to disk
+        if (subscribers.containsKey(topic)) {
+            Thread t = new Thread(() -> sendToSubscribers(topic, permFile, currentFile, partition));
+            t.start();
+        }
+        indexes.get(Constants.STARTING_OFFSET_INDEX).add(current);
     }
 
     /**
