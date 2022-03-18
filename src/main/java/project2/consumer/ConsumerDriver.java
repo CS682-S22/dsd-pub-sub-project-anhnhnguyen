@@ -54,7 +54,7 @@ public class ConsumerDriver {
             if (scanner.nextLine().equalsIgnoreCase(Constants.EXIT)) {
                 isRunning = false;
                 for (Thread t : threads) {
-                    t.join();
+                    t.join(1000);
                 }
                 for (Consumer consumer : clients.keySet()) {
                     consumer.close();
