@@ -37,14 +37,14 @@ public class BrokerFinder {
      * @param instanceSerializerFactory instance serializer factory
      */
     public BrokerFinder(CuratorFramework curatorFramework, InstanceSerializerFactory instanceSerializerFactory) {
-        discovery = ServiceDiscoveryBuilder.builder(BrokerMetadata.class)
+        this.discovery = ServiceDiscoveryBuilder.builder(BrokerMetadata.class)
                 .basePath(Constants.BASE_PATH)
                 .client(curatorFramework)
                 .serializer(instanceSerializerFactory.getInstanceSerializer(new TypeReference<>() {
                 }))
                 .build();
         try {
-            discovery.start();
+            this.discovery.start();
         } catch (Exception e) {
             LOGGER.error("BrokerFinder: " + e.getMessage());
         }

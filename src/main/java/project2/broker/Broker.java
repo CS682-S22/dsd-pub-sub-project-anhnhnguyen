@@ -25,8 +25,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.*;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -73,6 +72,10 @@ public class Broker {
      * in-memory data struture to store message before flushing to disk.
      */
     private final Map<String, Map<Integer, List<byte[]>>> tmp;
+    /**
+     * thread pool.
+     */
+    private final ScheduledThreadPoolExecutor threadPool;
 
     /**
      * Start the broker to listen on the given host name and port number. Also delete old log files
@@ -91,6 +94,7 @@ public class Broker {
         this.subscribers = new ConcurrentHashMap<>();
         this.connectionLockMap = new ConcurrentHashMap<>();
         this.isRunning = true;
+        this.threadPool = new ScheduledThreadPoolExecutor(Constants.NUM_THREADS);
         try {
             this.server = AsynchronousServerSocketChannel.open().bind(new InetSocketAddress(host, port));
             LOGGER.info("broker started on: " + server.getLocalAddress());
@@ -100,7 +104,7 @@ public class Broker {
         this.brokerRegister = new BrokerRegister(curatorFramework,
                 new InstanceSerializerFactory(objectMapper.reader(), objectMapper.writer()),
                 Constants.SERVICE_NAME, host, port, partition);
-        brokerRegister.registerAvailability();
+        this.brokerRegister.registerAvailability();
         Utils.deleteFiles(new File(Constants.LOG_FOLDER));
         Utils.createFolder(Constants.LOG_FOLDER);
     }
@@ -151,12 +155,12 @@ public class Broker {
     private void processRequest(Connection connection, byte[] request) {
         if (request[0] == Constants.PUB_REQ) {
             processPubReq(request);
-        }
-        if (request[0] == Constants.PULL_REQ) {
+        } else if (request[0] == Constants.PULL_REQ) {
             processPullReq(connection, request, Constants.NUM_RESPONSE);
-        }
-        if (request[0] == Constants.SUB_REQ) {
+        } else if (request[0] == Constants.SUB_REQ) {
             addSubscriber(connection, request);
+        } else {
+            LOGGER.error("Invalid request: " + request[0]) ;
         }
     }
 
@@ -289,8 +293,7 @@ public class Broker {
 
         // thread to send subscribers messages when segment file is flushed to disk
         if (subscribers.containsKey(topic)) {
-            Thread t = new Thread(() -> sendToSubscribers(topic, permFile, currentFile, partition));
-            t.start();
+            threadPool.execute(() -> sendToSubscribers(topic, permFile, currentFile, partition));
         }
         indexes.get(Constants.STARTING_OFFSET_INDEX).add(current);
     }
@@ -484,6 +487,7 @@ public class Broker {
         try {
             LOGGER.info("closing broker");
             isRunning = false;
+            threadPool.shutdown();
             brokerRegister.unregisterAvailability();
             server.close();
         } catch (IOException e) {

@@ -74,4 +74,8 @@ public class Constants {
      * default number of partitions.
      */
     public static final int NUM_PARTS = 3;
+    /**
+     * thread pool.
+     */
+    public static final int NUM_THREADS = 10;
 }
