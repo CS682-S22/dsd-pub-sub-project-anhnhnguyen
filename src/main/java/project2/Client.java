@@ -37,7 +37,7 @@ public abstract class Client {
     protected Client(String host, int port) {
         try {
             this.socket = AsynchronousSocketChannel.open();
-            Future<Void> future = socket.connect(new InetSocketAddress(host, port));
+            Future<Void> future = this.socket.connect(new InetSocketAddress(host, port));
             future.get();
             LOGGER.info("opening socket channel connecting with: " + host + ":" + port);
         } catch (IOException | ExecutionException | InterruptedException e) {

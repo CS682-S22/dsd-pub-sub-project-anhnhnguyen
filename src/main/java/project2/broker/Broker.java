@@ -329,10 +329,9 @@ public class Broker {
      * @param partition   partition
      */
     private void sendToSubscriber(String fileName, long currentFile, String topic, Connection connection, int partition) {
-        try {
+        try (RandomAccessFile raf = new RandomAccessFile(fileName, "r")) {
             List<Long> offSetList = topics.get(topic).get(partition).get(Constants.OFFSET_INDEX);
             int index = Arrays.binarySearch(offSetList.toArray(), currentFile);
-            RandomAccessFile raf = new RandomAccessFile(fileName, "r");
             long length = raf.length();
             long readSofar = 0;
             while (readSofar < length) {
@@ -342,7 +341,6 @@ public class Broker {
                 readSofar += messageLength;
                 index++;
             }
-            raf.close();
         } catch (IOException e) {
             LOGGER.error("sendToSubscriber(): " + e.getMessage());
         }
@@ -395,14 +393,12 @@ public class Broker {
                                 Constants.PATH_STRING + startingOffsetList.get(fileIndex) + Constants.FILE_TYPE;
                         // only expose to consumer when data is flushed to disk, so need to check the log/ folder
                         if (Files.exists(Paths.get(fileName))) {
-                            try {
+                            try (RandomAccessFile raf = new RandomAccessFile(fileName, "r")) {
                                 long length = offSetList.get(index + 1) - offSetList.get(index);
                                 long position = offSetList.get(index) - startingOffsetList.get(fileIndex);
-                                RandomAccessFile raf = new RandomAccessFile(fileName, "r");
                                 sendData(connection, length, offset, position, topic, raf, pullReq.getPartition());
                                 index++;
                                 count++;
-                                raf.close();
                             } catch (IOException e) {
                                 LOGGER.error("processPullReq(): " + e.getMessage());
                             }
