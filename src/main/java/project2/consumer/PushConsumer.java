@@ -25,6 +25,7 @@ public class PushConsumer extends Consumer {
      */
     public PushConsumer(String host, int port, String topic, long startingPosition, int partition) {
         super(host, port, topic, startingPosition, partition);
+        this.scheduler.shutdownNow();
         Logger logger = LoggerFactory.getLogger(PushConsumer.class);
         try {
             byte[] request = prepareRequest(topic, startingPosition, (byte) Constants.SUB_REQ, partition, 0);
@@ -44,6 +45,7 @@ public class PushConsumer extends Consumer {
      */
     @Override
     public byte[] poll(int milliseconds) {
-        return getMessage(milliseconds);
+        getMessage(milliseconds);
+        return queue.poll();
     }
 }

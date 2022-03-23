@@ -14,8 +14,9 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedList;
 import java.util.Queue;
-import java.util.Timer;
-import java.util.TimerTask;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Class that pulls message from the Broker by specifying topic and starting position to pull.
@@ -34,7 +35,7 @@ public class Consumer {
     /**
      * starting position.
      */
-    protected long startingPosition;
+    protected volatile long startingPosition;
     /**
      * partition.
      */
@@ -54,11 +55,11 @@ public class Consumer {
     /**
      * message queue.
      */
-    private final Queue<byte[]> queue;
+    protected final Queue<byte[]> queue;
     /**
-     * timer.
+     * scheduler.
      */
-    private final Timer timer;
+    protected final ScheduledExecutorService scheduler;
 
     /**
      * Constructor.
@@ -82,7 +83,26 @@ public class Consumer {
         this.startingPosition = startingPosition;
         this.partition = partition;
         this.queue = new LinkedList<>();
-        this.timer = new Timer();
+        this.scheduler = Executors.newSingleThreadScheduledExecutor();
+        this.scheduler.scheduleWithFixedDelay(() -> {
+            try {
+                byte[] request = prepareRequest(topic, getStartingPosition(), (byte) Constants.PULL_REQ, partition, Constants.NUM_RESPONSE);
+                dos.writeShort(request.length);
+                dos.write(request);
+                LOGGER.info("pull request sent. topic: " + topic + ", partition: " + partition + ", starting position: " + getStartingPosition());
+                getMessage(Constants.TIME_OUT);
+            } catch (IOException e) {
+                LOGGER.error("poll(): " + e.getMessage());
+            }
+        }, 0, Constants.TIME_OUT, TimeUnit.MILLISECONDS);
+    }
+
+    /**
+     * Getter for starting position.
+     * @return starting position
+     */
+    private long getStartingPosition() {
+        return startingPosition;
     }
 
     /**
@@ -92,22 +112,16 @@ public class Consumer {
      * @return byte[] array of message received
      */
     public byte[] poll(int milliseconds) {
-        byte[] message = getMessage(milliseconds);
-        TimerTask task = new TimerTask() {
-            @Override
-            public void run() {
+        synchronized (this) {
+            if (queue.isEmpty()) {
                 try {
-                    byte[] request = prepareRequest(topic, startingPosition, (byte) Constants.PULL_REQ, partition, Constants.NUM_RESPONSE);
-                    dos.writeShort(request.length);
-                    dos.write(request);
-                    LOGGER.info("pull request sent. topic: " + topic + ", partition: " + partition + ", starting position: " + startingPosition);
-                } catch (IOException e) {
+                    wait(milliseconds);
+                } catch (InterruptedException e) {
                     LOGGER.error("poll(): " + e.getMessage());
                 }
             }
-        };
-        timer.schedule(task, milliseconds);
-        return message;
+        }
+        return queue.poll();
     }
 
     /**
@@ -131,13 +145,8 @@ public class Consumer {
 
     /**
      * Method to get message from the connection and verify message is not duplicate.
-     *
-     * @return byte array
      */
-    protected byte[] getMessage(int milliseconds) {
-        if (!queue.isEmpty()) {
-            return queue.poll();
-        }
+    protected void getMessage(int milliseconds) {
         try {
             socket.setSoTimeout(milliseconds);
             int length = dis.readShort();
@@ -148,10 +157,8 @@ public class Consumer {
                 ReqRes response = new ReqRes(message);
                 if (response.getOffset() >= startingPosition) {
                     queue.add(message);
-                    synchronized ((Long) startingPosition) {
-                        startingPosition = response.getOffset() + response.getKey().getBytes(StandardCharsets.UTF_8).length
-                                + response.getData().length + 1;
-                    }
+                    startingPosition = response.getOffset() + response.getKey().getBytes(StandardCharsets.UTF_8).length
+                            + response.getData().length + 1;
                 }
                 length = dis.readShort();
             }
@@ -160,7 +167,6 @@ public class Consumer {
         } catch (IOException e) {
             LOGGER.error("getMessage(): " + e.getMessage());
         }
-        return queue.poll();
     }
 
     /**
@@ -168,7 +174,7 @@ public class Consumer {
      */
     public void close() {
         try {
-            timer.cancel();
+            scheduler.shutdown();
             socket.shutdownInput();
             socket.shutdownOutput();
             socket.close();
