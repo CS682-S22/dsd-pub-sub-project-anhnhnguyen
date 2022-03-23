@@ -23,7 +23,7 @@ public class PushConsumer extends Consumer {
      */
     public PushConsumer(String host, int port, String topic, long startingPosition, int partition) {
         super(host, port, topic, startingPosition, partition);
-        this.connection.send(prepareRequest(topic, startingPosition, (byte) Constants.SUB_REQ, partition));
+        this.connection.send(prepareRequest(topic, startingPosition, (byte) Constants.SUB_REQ, partition, 0));
         Logger logger = LoggerFactory.getLogger(PushConsumer.class);
         logger.info("subscribe request sent. topic: " + topic + ", partition: " + partition + ", starting offset: " + startingPosition);
     }

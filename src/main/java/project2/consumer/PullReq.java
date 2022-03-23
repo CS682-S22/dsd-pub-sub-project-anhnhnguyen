@@ -23,11 +23,15 @@ public class PullReq {
      * partition.
      */
     private final int partition;
+    /**
+     * number of messages.
+     */
+    private final int numMessages;
 
     /**
      * Constructor.
      * <p>
-     * Extracting byte array in the form of [1-byte message type] | [topic] | 0 | [8-byte offset] | [2-byte partition]
+     * Extracting byte array in the form of [1-byte message type] | [topic] | 0 | [8-byte offset] | [2-byte partition] | [2-byte number of messages]
      *
      * @param message byte array
      */
@@ -38,7 +42,8 @@ public class PullReq {
 
         index += topicBytes.length + 1;
         this.startingPosition = new BigInteger(Utils.extractBytes(index, index + 8, message, false)).longValue();
-        this.partition = new BigInteger(Utils.extractBytes(index + 8, message.length, message, false)).intValue();
+        this.partition = new BigInteger(Utils.extractBytes(index + 8, index + 10, message, false)).intValue();
+        this.numMessages = new BigInteger(Utils.extractBytes(index + 10, message.length, message, false)).intValue();
     }
 
     /**
@@ -65,5 +70,13 @@ public class PullReq {
      */
     public int getPartition() {
         return partition;
+    }
+
+    /**
+     * Getter for number of messages.
+     * @return number of messages
+     */
+    public int getNumMessages() {
+        return numMessages;
     }
 }

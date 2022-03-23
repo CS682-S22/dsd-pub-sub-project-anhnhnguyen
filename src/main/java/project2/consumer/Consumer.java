@@ -57,8 +57,9 @@ public class Consumer extends Client {
     public byte[] poll(int milliseconds) {
         byte[] message = getMessage(milliseconds);
         if (message == null) {
-            connection.send(prepareRequest(topic, startingPosition, (byte) Constants.PULL_REQ, partition));
+            connection.send(prepareRequest(topic, startingPosition, (byte) Constants.PULL_REQ, partition, Constants.NUM_RESPONSE));
             LOGGER.info("pull request sent. topic: " + topic + ", partition: " + partition + ", starting position: " + startingPosition);
+            message = getMessage(milliseconds);
         }
         return message;
     }
@@ -69,15 +70,16 @@ public class Consumer extends Client {
      * @param topic            topic
      * @param startingPosition starting position
      * @param messageType      message type (Pull request or subscribe request)
-     * @return byte array in the form of [1-byte message type] | [topic] | 0 | [8-byte offset] | [2-byte partition]
+     * @return byte array in the form of [1-byte message type] | [topic] | 0 | [8-byte offset] | [2-byte partition] | [2-byte number of messages]
      */
-    protected byte[] prepareRequest(String topic, long startingPosition, byte messageType, int partition) {
-        ByteBuffer byteBuffer = ByteBuffer.allocate(topic.getBytes(StandardCharsets.UTF_8).length + 12);
+    protected byte[] prepareRequest(String topic, long startingPosition, byte messageType, int partition, int numMessages) {
+        ByteBuffer byteBuffer = ByteBuffer.allocate(topic.getBytes(StandardCharsets.UTF_8).length + 14);
         byteBuffer.put(messageType);
         byteBuffer.put(topic.getBytes(StandardCharsets.UTF_8));
         byteBuffer.put((byte) 0);
         byteBuffer.putLong(startingPosition);
         byteBuffer.putShort((short) partition);
+        byteBuffer.putShort((short) numMessages);
         return byteBuffer.array();
     }
 
