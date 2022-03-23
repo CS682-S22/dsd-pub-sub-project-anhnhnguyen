@@ -58,10 +58,9 @@ public class Connection {
     /**
      * Method to read message from remote host.
      *
-     * @param milliseconds timeout
      * @return byte array of the message
      */
-    public byte[] receive(int milliseconds) {
+    public byte[] receive() {
         if (!messages.isEmpty()) {
             return messages.poll();
         }
@@ -70,7 +69,7 @@ public class Connection {
                 readResult = socketChannel.read(buffer);
             }
             try {
-                if (readResult.get(milliseconds, TimeUnit.MILLISECONDS) != -1 && readResult.isDone()) {
+                if (readResult.get(Constants.TIME_OUT, TimeUnit.MILLISECONDS) != -1 && readResult.isDone()) {
                     LOGGER.info("received message from: " + socketChannel.getRemoteAddress());
                     readResult = null;
                     int size = buffer.position();

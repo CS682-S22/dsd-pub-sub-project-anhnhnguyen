@@ -80,8 +80,7 @@ public class ConsumerDriver {
                 byte[] data = consumer.poll(Constants.TIME_OUT);
                 if (data != null) {
                     ReqRes response = new ReqRes(data);
-                    bw.write(response.getKey() + " "
-                            + new String(response.getData(), StandardCharsets.UTF_8));
+                    bw.write(response.getKey() + " " + new String(response.getData(), StandardCharsets.UTF_8));
                     bw.newLine();
                     bw.flush();
                     LOGGER.info("write to file: " + config.getTopic() + suffix + Constants.FILE_TYPE + ", offset: " + response.getOffset());

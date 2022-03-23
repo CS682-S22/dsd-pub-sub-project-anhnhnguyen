@@ -55,11 +55,10 @@ public class Broker {
      * broker register.
      */
     private final BrokerRegister brokerRegister;
-
     /**
      * lock map for topics.
      */
-    private final Map<String, Lock> locks;
+    private final Map<String, Lock> topicLockMap;
     /**
      * list of subscribers by partition in topic.
      */
@@ -90,7 +89,7 @@ public class Broker {
     public Broker(String host, int port, int partition, CuratorFramework curatorFramework, ObjectMapper objectMapper) {
         this.topics = new HashMap<>();
         this.tmp = new HashMap<>();
-        this.locks = new ConcurrentHashMap<>();
+        this.topicLockMap = new ConcurrentHashMap<>();
         this.subscribers = new ConcurrentHashMap<>();
         this.connectionLockMap = new ConcurrentHashMap<>();
         this.isRunning = true;
@@ -123,7 +122,7 @@ public class Broker {
                     }
                     Connection connection = new Connection(result);
                     while (isRunning) {
-                        byte[] request = connection.receive(Constants.TIME_OUT);
+                        byte[] request = connection.receive();
                         if (request != null) {
                             processRequest(connection, request);
                         }
@@ -156,7 +155,7 @@ public class Broker {
         if (request[0] == Constants.PUB_REQ) {
             processPubReq(request);
         } else if (request[0] == Constants.PULL_REQ) {
-            processPullReq(connection, request, Constants.NUM_RESPONSE);
+            processPullReq(connection, request);
         } else if (request[0] == Constants.SUB_REQ) {
             addSubscriber(connection, request);
         } else {
@@ -183,7 +182,7 @@ public class Broker {
         String topic = pubReq.getTopic();
         LOGGER.info("publish request. topic: " + topic + ", key: " + pubReq.getKey() +
                 ", data: " + new String(pubReq.getData(), StandardCharsets.UTF_8));
-        Lock lock = locks.computeIfAbsent(topic, t -> new ReentrantLock());
+        Lock lock = topicLockMap.computeIfAbsent(topic, t -> new ReentrantLock());
         lock.lock();
         try {
             Map<Integer, List<List<Long>>> partitionMap;
@@ -353,7 +352,7 @@ public class Broker {
      * @param connection connection
      * @param request    request
      */
-    private void processPullReq(Connection connection, byte[] request, int numMessages) {
+    private void processPullReq(Connection connection, byte[] request) {
         PullReq pullReq = new PullReq(request);
         String topic = pullReq.getTopic();
         long startingPosition = pullReq.getStartingPosition();
@@ -376,6 +375,7 @@ public class Broker {
                 }
                 if (index >= 0) {
                     int count = 0;
+                    int numMessages = pullReq.getNumMessages();
                     if (numMessages == 0) {
                         numMessages = Integer.MAX_VALUE; // send during push (for first subscription)
                     }
@@ -470,7 +470,7 @@ public class Broker {
         Lock lock = connectionLockMap.computeIfAbsent(connection, l -> new ReentrantLock());
         lock.lock();
         try {
-            processPullReq(connection, request, 0);
+            processPullReq(connection, request);
         } finally {
             lock.unlock();
         }
