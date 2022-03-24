@@ -31,7 +31,7 @@ public class PullReq {
     /**
      * Constructor.
      * <p>
-     * Extracting byte array in the form of [1-byte message type] | [topic] | 0 | [8-byte offset] | [2-byte partition]
+     * Extracting byte array in the form of [1-byte message type] | [topic] | 0 | [8-byte offset] | [2-byte partition] | [2-byte number of messages]
      *
      * @param message byte array
      */
@@ -75,8 +75,6 @@ public class PullReq {
 
     /**
      * Getter for number of messages.
-     *
-     * @return number of messages
      */
     public int getNumMessages() {
         return numMessages;
