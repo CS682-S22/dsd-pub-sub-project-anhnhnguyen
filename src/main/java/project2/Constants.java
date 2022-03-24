@@ -65,7 +65,7 @@ public class Constants {
     /**
      * polling interval.
      */
-    public static final int INTERVAL = 10;
+    public static final int INTERVAL = 100;
     /**
      * zk base path.
      */

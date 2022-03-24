@@ -177,14 +177,17 @@ public class Consumer {
      */
     public void close() {
         try {
-            scheduler.shutdown();
+            scheduler.shutdownNow();
+            if (!scheduler.awaitTermination(Constants.TIME_OUT, TimeUnit.MILLISECONDS)) {
+                LOGGER.error("awaitTermination()");
+            }
             socket.shutdownInput();
             socket.shutdownOutput();
             socket.close();
             dis.close();
             dos.close();
             LOGGER.info("closing consumer");
-        } catch (IOException e) {
+        } catch (IOException | InterruptedException e) {
             LOGGER.error("closer(): " + e.getMessage());
         }
     }

@@ -28,6 +28,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -486,9 +487,12 @@ public class Broker {
             LOGGER.info("closing broker");
             isRunning = false;
             threadPool.shutdown();
+            if (!threadPool.awaitTermination(Constants.TIME_OUT, TimeUnit.MILLISECONDS)) {
+                LOGGER.error("awaitTermination()");
+            }
             brokerRegister.unregisterAvailability();
             server.close();
-        } catch (IOException e) {
+        } catch (IOException | InterruptedException e) {
             LOGGER.error("close(): " + e.getMessage());
         }
     }
