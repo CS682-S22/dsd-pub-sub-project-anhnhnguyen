@@ -61,7 +61,11 @@ public class Constants {
     /**
      * timeout interval.
      */
-    public static final int TIME_OUT = 1000;
+    public static final int TIME_OUT = 500;
+    /**
+     * polling interval.
+     */
+    public static final int INTERVAL = 100;
     /**
      * zk base path.
      */

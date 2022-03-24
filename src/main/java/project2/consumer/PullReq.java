@@ -66,6 +66,7 @@ public class PullReq {
 
     /**
      * Getter for partition.
+     *
      * @return partition
      */
     public int getPartition() {
@@ -74,7 +75,6 @@ public class PullReq {
 
     /**
      * Getter for number of messages.
-     * @return number of messages
      */
     public int getNumMessages() {
         return numMessages;

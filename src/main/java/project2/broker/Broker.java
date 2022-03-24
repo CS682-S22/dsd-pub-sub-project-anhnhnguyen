@@ -25,7 +25,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
-import java.util.concurrent.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -55,7 +58,6 @@ public class Broker {
      * broker register.
      */
     private final BrokerRegister brokerRegister;
-
     /**
      * lock map for topics.
      */
@@ -69,7 +71,7 @@ public class Broker {
      */
     private final Map<Connection, Lock> connectionLockMap;
     /**
-     * in-memory data struture to store message before flushing to disk.
+     * in-memory data structure to store message before flushing to disk.
      */
     private final Map<String, Map<Integer, List<byte[]>>> tmp;
     /**
@@ -123,7 +125,7 @@ public class Broker {
                     }
                     Connection connection = new Connection(result);
                     while (isRunning) {
-                        byte[] request = connection.receive(Constants.TIME_OUT);
+                        byte[] request = connection.receive();
                         if (request != null) {
                             processRequest(connection, request);
                         }
@@ -160,7 +162,7 @@ public class Broker {
         } else if (request[0] == Constants.SUB_REQ) {
             addSubscriber(connection, request);
         } else {
-            LOGGER.error("Invalid request: " + request[0]) ;
+            LOGGER.error("Invalid request: " + request[0]);
         }
     }
 
@@ -485,9 +487,12 @@ public class Broker {
             LOGGER.info("closing broker");
             isRunning = false;
             threadPool.shutdown();
+            if (!threadPool.awaitTermination(Constants.TIME_OUT, TimeUnit.MILLISECONDS)) {
+                LOGGER.error("awaitTermination()");
+            }
             brokerRegister.unregisterAvailability();
             server.close();
-        } catch (IOException e) {
+        } catch (IOException | InterruptedException e) {
             LOGGER.error("close(): " + e.getMessage());
         }
     }
