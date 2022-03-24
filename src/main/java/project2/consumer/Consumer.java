@@ -59,7 +59,7 @@ public class Consumer {
     /**
      * scheduler.
      */
-    protected final ScheduledExecutorService scheduler;
+    protected ScheduledExecutorService scheduler;
 
     /**
      * Constructor.
@@ -84,21 +84,23 @@ public class Consumer {
         this.partition = partition;
         this.queue = new LinkedList<>();
         this.scheduler = Executors.newSingleThreadScheduledExecutor();
+        // thread to periodically send a request to pull data and populate the queue where application polls from
         this.scheduler.scheduleWithFixedDelay(() -> {
             try {
                 byte[] request = prepareRequest(topic, getStartingPosition(), (byte) Constants.PULL_REQ, partition, Constants.NUM_RESPONSE);
                 dos.writeShort(request.length);
                 dos.write(request);
                 LOGGER.info("pull request sent. topic: " + topic + ", partition: " + partition + ", starting position: " + getStartingPosition());
-                getMessage(Constants.TIME_OUT);
+                getMessage();
             } catch (IOException e) {
                 LOGGER.error("poll(): " + e.getMessage());
             }
-        }, 0, Constants.TIME_OUT, TimeUnit.MILLISECONDS);
+        }, 0, Constants.INTERVAL, TimeUnit.MILLISECONDS);
     }
 
     /**
      * Getter for starting position.
+     *
      * @return starting position
      */
     private long getStartingPosition() {
@@ -108,7 +110,7 @@ public class Consumer {
     /**
      * method to periodically send request to broker every specified milliseconds if no responses from broker.
      *
-     * @param milliseconds interval
+     * @param milliseconds time wait while queue is empty
      * @return byte[] array of message received
      */
     public byte[] poll(int milliseconds) {
@@ -146,9 +148,9 @@ public class Consumer {
     /**
      * Method to get message from the connection and verify message is not duplicate.
      */
-    protected void getMessage(int milliseconds) {
+    protected void getMessage() {
         try {
-            socket.setSoTimeout(milliseconds);
+            socket.setSoTimeout(Constants.TIME_OUT);
             int length = dis.readShort();
             while (length > 0) {
                 LOGGER.info("received message from: " + socket.getRemoteSocketAddress());

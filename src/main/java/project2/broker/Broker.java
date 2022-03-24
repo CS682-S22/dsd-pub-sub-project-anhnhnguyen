@@ -25,7 +25,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
-import java.util.concurrent.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -68,7 +70,7 @@ public class Broker {
      */
     private final Map<Connection, Lock> connectionLockMap;
     /**
-     * in-memory data struture to store message before flushing to disk.
+     * in-memory data structure to store message before flushing to disk.
      */
     private final Map<String, Map<Integer, List<byte[]>>> tmp;
     /**
@@ -159,7 +161,7 @@ public class Broker {
         } else if (request[0] == Constants.SUB_REQ) {
             addSubscriber(connection, request);
         } else {
-            LOGGER.error("Invalid request: " + request[0]) ;
+            LOGGER.error("Invalid request: " + request[0]);
         }
     }
 
