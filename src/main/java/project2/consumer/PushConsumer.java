@@ -33,6 +33,7 @@ public class PushConsumer extends Consumer {
             byte[] request = prepareRequest(topic, startingPosition, (byte) Constants.SUB_REQ, partition, 0);
             this.dos.writeShort(request.length);
             this.dos.write(request);
+            this.dos.flush();
         } catch (IOException e) {
             logger.error(e.getMessage());
         }

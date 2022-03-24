@@ -90,6 +90,7 @@ public class Consumer {
                 byte[] request = prepareRequest(topic, getStartingPosition(), (byte) Constants.PULL_REQ, partition, Constants.NUM_RESPONSE);
                 dos.writeShort(request.length);
                 dos.write(request);
+                dos.flush();
                 LOGGER.info("pull request sent. topic: " + topic + ", partition: " + partition + ", starting position: " + getStartingPosition());
                 getMessage();
             } catch (IOException e) {
