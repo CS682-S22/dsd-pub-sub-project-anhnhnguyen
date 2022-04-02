@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import project2.Constants;
 import project2.broker.ReqRes;
+import project2.zookeeper.BrokerMetadata;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
@@ -12,6 +13,7 @@ import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.Collection;
 import java.util.LinkedList;
 import java.util.Queue;
 import java.util.concurrent.Executors;
@@ -23,7 +25,7 @@ import java.util.concurrent.TimeUnit;
  *
  * @author anhnguyen
  */
-public class Consumer {
+public class Consumer extends ConsumerDriver {
     /**
      * logger object.
      */
@@ -60,6 +62,14 @@ public class Consumer {
      * scheduler.
      */
     protected ScheduledExecutorService scheduler;
+    /**
+     * host.
+     */
+    private String host;
+    /**
+     * port.
+     */
+    private int port;
 
     /**
      * Constructor.
@@ -79,33 +89,15 @@ public class Consumer {
         } catch (IOException e) {
             LOGGER.error("can't open connection with broker: " + host + ":" + port + " " + e.getMessage());
         }
+        this.host = host;
+        this.port = port;
         this.topic = topic;
         this.startingPosition = startingPosition;
         this.partition = partition;
         this.queue = new LinkedList<>();
         this.scheduler = Executors.newSingleThreadScheduledExecutor();
         // thread to periodically send a request to pull data and populate the queue where application polls from
-        this.scheduler.scheduleWithFixedDelay(() -> {
-            try {
-                byte[] request = prepareRequest(topic, getStartingPosition(), (byte) Constants.PULL_REQ, partition, Constants.NUM_RESPONSE);
-                dos.writeShort(request.length);
-                dos.write(request);
-                dos.flush();
-                LOGGER.info("pull request sent. topic: " + topic + ", partition: " + partition + ", starting position: " + getStartingPosition());
-                getMessage();
-            } catch (IOException e) {
-                LOGGER.error("poll(): " + e.getMessage());
-            }
-        }, 0, Constants.INTERVAL, TimeUnit.MILLISECONDS);
-    }
-
-    /**
-     * Getter for starting position.
-     *
-     * @return starting position
-     */
-    private long getStartingPosition() {
-        return startingPosition;
+        this.scheduler.scheduleWithFixedDelay(this::request, 0, Constants.INTERVAL, TimeUnit.MILLISECONDS);
     }
 
     /**
@@ -144,6 +136,46 @@ public class Consumer {
         byteBuffer.putShort((short) partition);
         byteBuffer.putShort((short) numMessages);
         return byteBuffer.array();
+    }
+
+    /**
+     * Method to make a pull request and fill the queue with response to be consumed by application.
+     * If detecting host failure, go to Zookeeper to find a new host and reroute the request to the new host.
+     */
+    private void request() {
+        try {
+            byte[] request = prepareRequest(topic, startingPosition, (byte) Constants.PULL_REQ, partition, Constants.NUM_RESPONSE);
+            dos.writeShort(request.length);
+            dos.write(request);
+            dos.flush();
+            LOGGER.info("pull request sent. topic: " + topic + ", partition: " + partition + ", starting position: " + startingPosition);
+            getMessage();
+        } catch (IOException e) {
+            LOGGER.error("poll(): " + e.getMessage());
+            Collection<BrokerMetadata> brokers = curator.findBrokers();
+            BrokerMetadata broker = findBroker(brokers, partition);
+            while (broker == null || broker.getListenAddress().equals(host) && broker.getListenPort() == port) {
+                synchronized (this) {
+                    try {
+                        wait(Constants.TIME_OUT);
+                    } catch (InterruptedException exc) {
+                        LOGGER.error("wait(): " + exc.getMessage());
+                    }
+                }
+                LOGGER.info("Looking for new broker");
+                brokers = curator.findBrokers();
+                broker = findBroker(brokers, partition);
+            }
+            try {
+                host = broker.getListenAddress();
+                port = broker.getListenPort();
+                socket = new Socket(broker.getListenAddress(), broker.getListenPort());
+                dis = new DataInputStream(socket.getInputStream());
+                dos = new DataOutputStream(socket.getOutputStream());
+            } catch (IOException exc) {
+                LOGGER.error(exc.getMessage());
+            }
+        }
     }
 
     /**

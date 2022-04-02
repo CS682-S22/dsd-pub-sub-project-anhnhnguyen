@@ -28,6 +28,10 @@ public class ConsumerDriver {
      * state of the driver.
      */
     private static volatile boolean isRunning = true;
+    /**
+     * curator.
+     */
+    protected static Curator curator;
 
     /**
      * Main program for consumer to start a thread to pull message from consumer until user asks to exit.
@@ -39,8 +43,15 @@ public class ConsumerDriver {
         try {
             Config config = new Gson().fromJson(new FileReader(args[0]), Config.class);
             config.validate();
-            Curator curator = new Curator(config.getZkConnection());
+            curator = new Curator(config.getZkConnection());
             Collection<BrokerMetadata> brokers = curator.findBrokers();
+            while (brokers.size() != config.getNumBrokers()) {
+                synchronized (brokers) {
+                    brokers.wait(Constants.TIME_OUT);
+                }
+                LOGGER.info("Looking for broker");
+                brokers = curator.findBrokers();
+            }
             Map<Consumer, Integer> clients = createConsumers(brokers, config);
 
             List<Thread> threads = new ArrayList<>();
@@ -125,7 +136,7 @@ public class ConsumerDriver {
      * @param partition partition
      * @return broker that store the partition
      */
-    private static BrokerMetadata findBroker(Collection<BrokerMetadata> brokers, int partition) {
+    protected static BrokerMetadata findBroker(Collection<BrokerMetadata> brokers, int partition) {
         for (BrokerMetadata broker : brokers) {
             if (broker.getPartition() == partition % brokers.size()) {
                 return broker;
