@@ -60,7 +60,7 @@ public class Connection {
      *
      * @return byte array of the message
      */
-    public byte[] receive() {
+    public byte[] receive() throws IOException, InterruptedException, ExecutionException {
         if (!messages.isEmpty()) {
             return messages.poll();
         }
@@ -95,8 +95,6 @@ public class Connection {
                         buffer.clear();
                     }
                 }
-            } catch (InterruptedException | ExecutionException | IOException e) {
-                LOGGER.error("receive(): " + e.getMessage());
             } catch (TimeoutException e) {
                 // do nothing
             }
@@ -109,19 +107,15 @@ public class Connection {
      *
      * @param message byte array
      */
-    public void send(byte[] message) {
-        try {
-            if (socketChannel != null && socketChannel.isOpen()) {
-                ByteBuffer buffer = ByteBuffer.allocate(message.length + 2);
-                buffer.putShort((short) message.length);
-                buffer.put(message);
-                buffer.flip();
-                Future<Integer> writeResult = socketChannel.write(buffer);
-                writeResult.get();
-                LOGGER.info("sent message to: " + socketChannel.getRemoteAddress());
-            }
-        } catch (InterruptedException | ExecutionException | IOException e) {
-            LOGGER.error("send(): " + e.getMessage());
+    public void send(byte[] message) throws IOException, InterruptedException, ExecutionException {
+        if (socketChannel != null && socketChannel.isOpen()) {
+            ByteBuffer buffer = ByteBuffer.allocate(message.length + 2);
+            buffer.putShort((short) message.length);
+            buffer.put(message);
+            buffer.flip();
+            Future<Integer> writeResult = socketChannel.write(buffer);
+            writeResult.get();
+            LOGGER.info("sent message to: " + socketChannel.getRemoteAddress());
         }
     }
 }

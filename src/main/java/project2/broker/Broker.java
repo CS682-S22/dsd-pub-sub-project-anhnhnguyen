@@ -25,10 +25,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -125,9 +122,13 @@ public class Broker {
                     }
                     Connection connection = new Connection(result);
                     while (isRunning) {
-                        byte[] request = connection.receive();
-                        if (request != null) {
-                            processRequest(connection, request);
+                        try {
+                            byte[] request = connection.receive();
+                            if (request != null) {
+                                processRequest(connection, request);
+                            }
+                        } catch (IOException | InterruptedException | ExecutionException e) {
+                            LOGGER.error(e.getMessage());
                         }
                     }
                     LOGGER.info("closing socket channel");
@@ -156,7 +157,7 @@ public class Broker {
      */
     private void processRequest(Connection connection, byte[] request) {
         if (request[0] == Constants.PUB_REQ) {
-            processPubReq(request);
+            processPubReq(connection, request);
         } else if (request[0] == Constants.PULL_REQ) {
             processPullReq(connection, request);
         } else if (request[0] == Constants.SUB_REQ) {
@@ -177,10 +178,11 @@ public class Broker {
      * Add offset of the message of the next segment file to the starting offset list.
      *
      * @param request request
+     * @param connection connection
      *                <p>
      *                Reference for locking on certain topic: https://stackoverflow.com/questions/71007235/java-synchronized-on-the-same-file-but-not-different
      */
-    private void processPubReq(byte[] request) {
+    private void processPubReq(Connection connection, byte[] request) {
         PubReq pubReq = new PubReq(request);
         String topic = pubReq.getTopic();
         LOGGER.info("publish request. topic: " + topic + ", key: " + pubReq.getKey() +
@@ -228,6 +230,12 @@ public class Broker {
             byteBuffer.put(pubReq.getData());
             tmp.get(topic).get(partition).add(byteBuffer.array());
             LOGGER.info("data added to topic: " + topic + ", partition: " + partition + ", key: " + pubReq.getKey() + ", offset: " + current);
+            try {
+                LOGGER.info("sending ack to publish request");
+                connection.send(Constants.ACK.getBytes(StandardCharsets.UTF_8));
+            } catch (IOException | InterruptedException | ExecutionException e) {
+                LOGGER.error("processPubReq(): " + e.getMessage());
+            }
         } finally {
             lock.unlock();
         }
@@ -434,7 +442,7 @@ public class Broker {
             response.put(data);
             connection.send(response.array());
             LOGGER.info("data at offset: " + offset + " from topic: " + topic + ", partition: " + partition + " sent");
-        } catch (IOException e) {
+        } catch (IOException | InterruptedException | ExecutionException e) {
             LOGGER.error("sendData(): " + e.getMessage());
         }
     }

@@ -31,6 +31,14 @@ public class Producer {
      * connection object.
      */
     private final Connection connection;
+    /**
+     * host.
+     */
+    private final String host;
+    /**
+     * port.
+     */
+    private final int port;
 
     /**
      * Constructor.
@@ -39,6 +47,8 @@ public class Producer {
      * @param port port
      */
     public Producer(String host, int port) {
+        this.host = host;
+        this.port = port;
         try {
             this.socket = AsynchronousSocketChannel.open();
             Future<Void> future = this.socket.connect(new InetSocketAddress(host, port));
@@ -57,8 +67,9 @@ public class Producer {
      * @param key           key
      * @param data          data
      * @param numPartitions number of partitions
+     * @return true if sending successfully and receiving ack else false
      */
-    public void send(String topic, String key, byte[] data, int numPartitions) {
+    public boolean send(String topic, String key, byte[] data, int numPartitions) {
         int length = topic.getBytes(StandardCharsets.UTF_8).length
                 + key.getBytes(StandardCharsets.UTF_8).length + data.length + 6;
         ByteBuffer byteBuffer = ByteBuffer.allocate(length);
@@ -70,9 +81,23 @@ public class Producer {
         byteBuffer.put(data);
         byteBuffer.put((byte) 0);
         byteBuffer.putShort((short) numPartitions);
-        LOGGER.info("message sent. topic: " + topic + ", key: "
-                + key + ", data: " + new String(data, StandardCharsets.UTF_8));
-        connection.send(byteBuffer.array());
+        try {
+            connection.send(byteBuffer.array());
+            String ack = "";
+            while (!ack.equals(Constants.ACK)) {
+                byte[] message = connection.receive();
+                if (message != null) {
+                    ack = new String(message, StandardCharsets.UTF_8);
+                }
+            }
+            LOGGER.info("message sent. topic: " + topic + ", key: "
+                    + key + ", data: " + new String(data, StandardCharsets.UTF_8));
+            return true;
+        } catch (IOException | InterruptedException | ExecutionException e) {
+            LOGGER.error("IOException: " + e.getMessage());
+            close();
+            return false;
+        }
     }
 
     /**
@@ -87,5 +112,23 @@ public class Producer {
         } catch (IOException e) {
             LOGGER.error("close(): " + e.getMessage());
         }
+    }
+
+    /**
+     * Getter for host.
+     *
+     * @return host
+     */
+    public String getHost() {
+        return host;
+    }
+
+    /**
+     * Getter for port.
+     *
+     * @return port
+     */
+    public int getPort() {
+        return port;
     }
 }

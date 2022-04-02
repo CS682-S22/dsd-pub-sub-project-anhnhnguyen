@@ -27,6 +27,11 @@ public class ProducerDriver {
     private static final Logger LOGGER = LoggerFactory.getLogger(ProducerDriver.class);
 
     /**
+     * map between partition number and producer that connects with the appropriate broker.
+     */
+    private static final Map<Integer, Producer> partitionMap = new HashMap<>();
+
+    /**
      * main program to start producer and send messages to broker.
      *
      * @param args program arguments
@@ -42,52 +47,76 @@ public class ProducerDriver {
         }
 
         Curator curator = new Curator(config.getZkConnection());
-        Map<Integer, Producer> partitionMap = findBrokers(curator);
-        publish(config, partitionMap, curator);
+        findBrokers(curator, null, 0);
+        publish(config, curator);
     }
 
     /**
      * Method to find brokers and store them in a map for easy lookup based on partition number.
      *
-     * @return map that points partition to producer that connected with the brokers that store the partition
+     * @param curator curator
+     * @param host host
+     * @param port port
      */
-    private static Map<Integer, Producer> findBrokers(Curator curator) {
+    private static void findBrokers(Curator curator, String host, int port) {
         Collection<BrokerMetadata> brokers = curator.findBrokers();
-        Map<Integer, Producer> partitionMap = new HashMap<>();
         for (BrokerMetadata broker : brokers) {
-            Producer producer = new Producer(broker.getListenAddress(), broker.getListenPort());
             int partition = broker.getPartition();
-            partitionMap.put(partition, producer);
+            String brokerHost = broker.getListenAddress();
+            int brokerPort = broker.getListenPort();
+            // if broker fails, only replace the partition that that broker is in charge of with the new producer
+            // connecting with that broker. Need to check that new broker is not the same because Zookeeper
+            // may take some time to reflect the change.
+            if (!partitionMap.containsKey(partition) && (!brokerHost.equals(host) || brokerPort != port)) {
+                Producer producer = new Producer(broker.getListenAddress(), broker.getListenPort());
+                partitionMap.put(partition, producer);
+            }
         }
-        return partitionMap;
     }
 
     /**
      * Method to read from file line by line, and publish message to the appropriate broker based on key.
      *
      * @param config       config
-     * @param partitionMap partition map
      * @param curator      curator
      */
-    private static void publish(Config config, Map<Integer, Producer> partitionMap, Curator curator) {
+    private static void publish(Config config, Curator curator) {
         try (FileInputStream fis = new FileInputStream(config.getFile());
              BufferedReader br = new BufferedReader(new InputStreamReader(fis))) {
             LOGGER.info("reading from file: " + config.getFile());
             String line;
             while ((line = br.readLine()) != null) {
+                Thread.sleep(5); // only for demo purpose or else publishing happens too fast, can't inject failure
                 String topic = findTopic(line);
                 String key = findKey(line);
                 byte[] data = findData(line);
                 int topicPartitions = config.getTopics().getOrDefault(topic, Constants.NUM_PARTS);
-                int partition = (key.hashCode() % topicPartitions) % partitionMap.size();
+                int partition = (key.hashCode() % topicPartitions) % config.getNumBrokers();
+                while (!partitionMap.containsKey(partition)) {
+                    findBrokers(curator, null, 0);
+                }
                 Producer producer = partitionMap.get(partition);
-                producer.send(topic, key, data, topicPartitions);
+                boolean success = producer.send(topic, key, data, topicPartitions);
+                // success is false when IOException happens or broker fails
+                // then remove that producer connecting with that broker from the partition map
+                // and look for a new broker through Zookeeper
+                while (!success) {
+                    LOGGER.info("Looking for new broker");
+                    String currentHost = producer.getHost();
+                    int currentPort = producer.getPort();
+                    partitionMap.remove(partition);
+                    while (!partitionMap.containsKey(partition)) {
+                        findBrokers(curator, currentHost, currentPort);
+                    }
+                    producer = partitionMap.get(partition);
+                    success = producer.send(topic, key, data, topicPartitions);
+                }
             }
             for (Producer producer : partitionMap.values()) {
                 producer.close();
             }
             curator.close();
-        } catch (IOException e) {
+        } catch (IOException | InterruptedException e) {
             LOGGER.error(e.getMessage());
             System.exit(1);
         }

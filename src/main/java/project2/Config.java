@@ -49,21 +49,28 @@ public class Config {
      * number of partitions.
      */
     private final int numPartitions;
+    /**
+     * number of brokers.
+     */
+    private final int numBrokers;
 
     /**
      * Constructor.
      *
-     * @param host         host
-     * @param port         port
-     * @param file         file to read and send message
-     * @param topic        topic of message
-     * @param position     starting position to pull from
-     * @param partition    partition
-     * @param zkConnection zkConnection
-     * @param isPull       isPull
+     * @param host          host
+     * @param port          port
+     * @param file          file to read and send message
+     * @param topic         topic of message
+     * @param position      starting position to pull from
+     * @param partition     partition
+     * @param zkConnection  zkConnection
+     * @param isPull        isPull
+     * @param numPartitions number of total partitions
+     * @param numBrokers    number of brokers
+     * @param topics        map between topic and number of partitions for the topic
      */
     public Config(String host, int port, String file, String topic, long position, int partition,
-                  String zkConnection, boolean isPull, Map<String, Integer> topics, int numPartitions) {
+                  String zkConnection, boolean isPull, Map<String, Integer> topics, int numPartitions, int numBrokers) {
         this.host = host;
         this.port = port;
         this.file = file;
@@ -74,6 +81,7 @@ public class Config {
         this.isPull = isPull;
         this.topics = topics;
         this.numPartitions = numPartitions;
+        this.numBrokers = numBrokers;
     }
 
     /**
@@ -159,10 +167,20 @@ public class Config {
 
     /**
      * Getter for number of partitions.
+     *
      * @return numPartitions
      */
     public int getNumPartitions() {
         return numPartitions;
+    }
+
+    /**
+     * Getter for number of brokers.
+     *
+     * @return numBrokers
+     */
+    public int getNumBrokers() {
+        return numBrokers;
     }
 
     /**

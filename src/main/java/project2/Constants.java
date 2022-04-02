@@ -82,4 +82,8 @@ public class Constants {
      * thread pool.
      */
     public static final int NUM_THREADS = 10;
+    /**
+     * ack message.
+     */
+    public static final String ACK = "ack";
 }

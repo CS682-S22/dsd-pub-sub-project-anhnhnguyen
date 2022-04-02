@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import project2.Constants;
 
 import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -23,6 +24,7 @@ class ProducerTest {
                 ServerSocket serverSocket = new ServerSocket(1024);
                 Socket socket = serverSocket.accept();
                 DataInputStream dis = new DataInputStream(socket.getInputStream());
+                DataOutputStream dos = new DataOutputStream(socket.getOutputStream());
                 int length = dis.readShort();
                 if (length > 0) {
                     byte[] message = new byte[length];
@@ -32,8 +34,11 @@ class ProducerTest {
                     assertEquals(topic, pubReq.getTopic());
                     assertEquals(key, pubReq.getKey());
                     assertArrayEquals(data, pubReq.getData());
+                    dos.writeShort(Constants.ACK.getBytes(StandardCharsets.UTF_8).length);
+                    dos.write(Constants.ACK.getBytes(StandardCharsets.UTF_8));
                 }
                 dis.close();
+                dos.close();
                 socket.close();
                 serverSocket.close();
             } catch (IOException e) {
@@ -42,7 +47,7 @@ class ProducerTest {
         });
         t.start();
         Producer producer = new Producer("localhost", 1024);
-        producer.send(topic, key, data, 1);
+        assertTrue(producer.send(topic, key, data, 1));
         producer.close();
         try {
             t.join();
@@ -61,11 +66,14 @@ class ProducerTest {
                 ServerSocket serverSocket = new ServerSocket(1024);
                 Socket socket = serverSocket.accept();
                 DataInputStream dis = new DataInputStream(socket.getInputStream());
+                DataOutputStream dos = new DataOutputStream(socket.getOutputStream());
                 int length = dis.readShort();
                 while (length > 0) {
                     byte[] message = new byte[length];
                     dis.readFully(message, 0, length);
                     PubReq pubReq = new PubReq(message);
+                    dos.writeShort(Constants.ACK.getBytes(StandardCharsets.UTF_8).length);
+                    dos.write(Constants.ACK.getBytes(StandardCharsets.UTF_8));
                     if (new String(pubReq.getData(), StandardCharsets.UTF_8).equals("FIN")) {
                         break;
                     }
@@ -76,6 +84,7 @@ class ProducerTest {
                     length = dis.readShort();
                 }
                 dis.close();
+                dos.close();
                 socket.close();
                 serverSocket.close();
             } catch (IOException e) {
