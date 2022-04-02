@@ -93,6 +93,10 @@ public class ProducerDriver {
                 int topicPartitions = config.getTopics().getOrDefault(topic, Constants.NUM_PARTS);
                 int partition = (key.hashCode() % topicPartitions) % config.getNumBrokers();
                 while (!partitionMap.containsKey(partition)) {
+                    synchronized (partitionMap) {
+                        partitionMap.wait(Constants.TIME_OUT);
+                    }
+                    LOGGER.info("Looking for broker");
                     findBrokers(curator, null, 0);
                 }
                 Producer producer = partitionMap.get(partition);
@@ -101,11 +105,14 @@ public class ProducerDriver {
                 // then remove that producer connecting with that broker from the partition map
                 // and look for a new broker through Zookeeper
                 while (!success) {
-                    LOGGER.info("Looking for new broker");
                     String currentHost = producer.getHost();
                     int currentPort = producer.getPort();
                     partitionMap.remove(partition);
                     while (!partitionMap.containsKey(partition)) {
+                        synchronized (partitionMap) {
+                            partitionMap.wait(Constants.TIME_OUT);
+                        }
+                        LOGGER.info("Looking for new broker");
                         findBrokers(curator, currentHost, currentPort);
                     }
                     producer = partitionMap.get(partition);
