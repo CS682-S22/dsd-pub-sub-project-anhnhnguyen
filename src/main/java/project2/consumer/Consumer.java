@@ -152,6 +152,7 @@ public class Consumer extends ConsumerDriver {
             getMessage();
         } catch (IOException e) {
             LOGGER.error("poll(): " + e.getMessage());
+            scheduler.shutdown();
             Collection<BrokerMetadata> brokers = curator.findBrokers();
             BrokerMetadata broker = findBroker(brokers, partition);
             while (broker == null || broker.getListenAddress().equals(host) && broker.getListenPort() == port) {
@@ -172,6 +173,8 @@ public class Consumer extends ConsumerDriver {
                 socket = new Socket(broker.getListenAddress(), broker.getListenPort());
                 dis = new DataInputStream(socket.getInputStream());
                 dos = new DataOutputStream(socket.getOutputStream());
+                scheduler = Executors.newSingleThreadScheduledExecutor();
+                scheduler.scheduleWithFixedDelay(this::request, 0, Constants.INTERVAL, TimeUnit.MILLISECONDS);
             } catch (IOException exc) {
                 LOGGER.error(exc.getMessage());
             }
@@ -181,7 +184,7 @@ public class Consumer extends ConsumerDriver {
     /**
      * Method to get message from the connection and verify message is not duplicate.
      */
-    protected void getMessage() {
+    protected void getMessage() throws IOException {
         try {
             socket.setSoTimeout(Constants.TIME_OUT);
             int length = dis.readShort();
@@ -199,8 +202,6 @@ public class Consumer extends ConsumerDriver {
             }
         } catch (SocketTimeoutException e) {
             // do nothing
-        } catch (IOException e) {
-            LOGGER.error("getMessage(): " + e.getMessage());
         }
     }
 

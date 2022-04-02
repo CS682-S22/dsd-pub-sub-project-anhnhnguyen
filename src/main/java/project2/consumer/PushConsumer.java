@@ -40,6 +40,12 @@ public class PushConsumer extends Consumer {
         logger.info("subscribe request sent. topic: " + topic + ", partition: " + partition + ", starting offset: " + startingPosition);
         this.scheduler = Executors.newSingleThreadScheduledExecutor();
         // thread to read message from broker and add to queue where application can poll from
-        this.scheduler.scheduleWithFixedDelay(this::getMessage, 0, Constants.INTERVAL, TimeUnit.MILLISECONDS);
+        this.scheduler.scheduleWithFixedDelay(() -> {
+            try {
+                getMessage();
+            } catch (IOException e) {
+                logger.error(e.getMessage());
+            }
+        }, 0, Constants.INTERVAL, TimeUnit.MILLISECONDS);
     }
 }
