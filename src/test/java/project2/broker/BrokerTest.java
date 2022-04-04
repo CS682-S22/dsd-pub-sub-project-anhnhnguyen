@@ -1,13 +1,17 @@
 package project2.broker;
 
+import com.google.gson.Gson;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import project2.Config;
 import project2.consumer.Consumer;
 import project2.producer.Producer;
 import project2.zookeeper.BrokerMetadata;
 import project2.zookeeper.Curator;
 
+import java.io.FileNotFoundException;
+import java.io.FileReader;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
@@ -15,8 +19,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class BrokerTest {
     private Broker broker;
-    private final String HOST = "localhost";
-    private final int PORT = 1024;
+    private String host;
+    private int port;
     private final String TOPIC = "test";
     private final String KEY = "key";
     private final byte[] DATA = "this is a test".getBytes(StandardCharsets.UTF_8);
@@ -25,9 +29,16 @@ class BrokerTest {
     @BeforeEach
     void setUp() {
         curator = new Curator("127.0.0.1:2181");
-        int partition = 0;
-        broker = new Broker(HOST, PORT, partition, curator.getCuratorFramework(), curator.getObjectMapper());
-        broker.start();
+        try {
+            Config config = new Gson().fromJson(new FileReader("configs/broker1.json"), Config.class);
+            broker = new Broker(config, curator.getCuratorFramework(), curator.getObjectMapper());
+            host = config.getHost();
+            port = config.getPort();
+            broker.start();
+        } catch (FileNotFoundException e) {
+            fail(e.getMessage());
+        }
+
     }
 
     @AfterEach
@@ -51,7 +62,7 @@ class BrokerTest {
                 producer.close();
             }
         }
-        Consumer consumer = new Consumer(HOST, PORT, TOPIC, 0, 0);
+        Consumer consumer = new Consumer(host, port, TOPIC, 0, 0);
         int count = 0;
         while (count < 56) {
             byte[] message = consumer.poll(100);
@@ -158,7 +169,7 @@ class BrokerTest {
 
         @Override
         public void run() {
-            Consumer consumer = new Consumer(HOST, PORT, TOPIC, startingPosition, 0);
+            Consumer consumer = new Consumer(host, port, TOPIC, startingPosition, 0);
             int count = 0;
             while (count < 30 - startingPosition / 18) {
                 byte[] message = consumer.poll(100);

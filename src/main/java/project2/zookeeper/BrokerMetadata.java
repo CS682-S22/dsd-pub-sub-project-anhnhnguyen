@@ -30,6 +30,12 @@ public class BrokerMetadata {
     private final int partition;
 
     /**
+     * id.
+     */
+    @JsonProperty("id")
+    private final int id;
+
+    /**
      * Constructor.
      *
      * @param listenAddress listening address
@@ -38,10 +44,11 @@ public class BrokerMetadata {
      */
     @JsonCreator
     public BrokerMetadata(@JsonProperty("listenAddress") String listenAddress, @JsonProperty("listenPort") int listenPort,
-                          @JsonProperty("partition") int partition) {
+                          @JsonProperty("partition") int partition, @JsonProperty("id") int id) {
         this.listenAddress = listenAddress;
         this.listenPort = listenPort;
         this.partition = partition;
+        this.id = id;
     }
 
     /**
@@ -67,5 +74,14 @@ public class BrokerMetadata {
      */
     public int getPartition() {
         return partition;
+    }
+
+    /**
+     * Getter for id.
+     *
+     * @return id
+     */
+    public int getId() {
+        return id;
     }
 }

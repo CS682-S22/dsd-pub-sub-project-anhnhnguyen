@@ -47,6 +47,10 @@ public class BrokerRegister {
      */
     private final int partition;
     /**
+     * id.
+     */
+    private final int id;
+    /**
      * service discovery.
      */
     private ServiceDiscovery<BrokerMetadata> discovery;
@@ -60,9 +64,10 @@ public class BrokerRegister {
      * @param listenAddress             listening address
      * @param listenPort                listening port
      * @param partition                 partition
+     * @param id                        id
      */
     public BrokerRegister(CuratorFramework curatorFramework, InstanceSerializerFactory instanceSerializerFactory,
-                          String serviceName, String listenAddress, int listenPort, int partition) {
+                          String serviceName, String listenAddress, int listenPort, int partition, int id) {
         this.curatorFramework = curatorFramework;
         this.jacksonInstanceSerializer = instanceSerializerFactory.getInstanceSerializer(new TypeReference<>() {
         });
@@ -70,6 +75,7 @@ public class BrokerRegister {
         this.listenAddress = listenAddress;
         this.listenPort = listenPort;
         this.partition = partition;
+        this.id = id;
     }
 
     /**
@@ -106,7 +112,7 @@ public class BrokerRegister {
      * @throws Exception exception
      */
     private ServiceInstance<BrokerMetadata> getInstance() throws Exception {
-        BrokerMetadata broker = new BrokerMetadata(listenAddress, listenPort, partition);
+        BrokerMetadata broker = new BrokerMetadata(listenAddress, listenPort, partition, id);
         return ServiceInstance.<BrokerMetadata>builder()
                 .name(serviceName)
                 .address(listenAddress)

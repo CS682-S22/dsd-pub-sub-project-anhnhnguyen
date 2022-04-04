@@ -86,4 +86,16 @@ public class Constants {
      * ack message.
      */
     public static final String ACK = "ack";
+    /**
+     * member request message.
+     */
+    public static final String MEM = "mem";
+    /**
+     * retry.
+     */
+    public static final int RETRY = 5;
+    /**
+     * no leader info.
+     */
+    public static final String NONE = "none";
 }
