@@ -34,8 +34,7 @@ public class BrokerDriver {
             Config config = new Gson().fromJson(new FileReader(args[0]), Config.class);
             config.validate();
             Curator curator = new Curator(config.getZkConnection());
-            Broker broker = new Broker(config.getHost(), config.getPort(), config.getPartition(),
-                    curator.getCuratorFramework(), curator.getObjectMapper());
+            Broker broker = new Broker(config, curator.getCuratorFramework(), curator.getObjectMapper());
             broker.start();
             Scanner scanner = new Scanner(System.in);
             if (scanner.nextLine().equalsIgnoreCase(Constants.EXIT)) {

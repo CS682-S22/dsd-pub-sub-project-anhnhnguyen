@@ -53,6 +53,18 @@ public class Config {
      * number of brokers.
      */
     private final int numBrokers;
+    /**
+     * leader status.
+     */
+    private final boolean isLeader;
+    /**
+     * broker id.
+     */
+    private final int id;
+    /**
+     * member info.
+     */
+    private final String members;
 
     /**
      * Constructor.
@@ -68,9 +80,12 @@ public class Config {
      * @param numPartitions number of total partitions
      * @param numBrokers    number of brokers
      * @param topics        map between topic and number of partitions for the topic
+     * @param isLeader      leader status
+     * @param id            id
+     * @param members       members
      */
-    public Config(String host, int port, String file, String topic, long position, int partition,
-                  String zkConnection, boolean isPull, Map<String, Integer> topics, int numPartitions, int numBrokers) {
+    public Config(String host, int port, String file, String topic, long position, int partition, boolean isLeader, String members,
+                  String zkConnection, boolean isPull, Map<String, Integer> topics, int numPartitions, int numBrokers, int id) {
         this.host = host;
         this.port = port;
         this.file = file;
@@ -82,6 +97,9 @@ public class Config {
         this.topics = topics;
         this.numPartitions = numPartitions;
         this.numBrokers = numBrokers;
+        this.isLeader = isLeader;
+        this.id = id;
+        this.members = members;
     }
 
     /**
@@ -181,6 +199,33 @@ public class Config {
      */
     public int getNumBrokers() {
         return numBrokers;
+    }
+
+    /**
+     * Getter for leader status.
+     *
+     * @return isLeader
+     */
+    public boolean isLeader() {
+        return isLeader;
+    }
+
+    /**
+     * Getter for id.
+     *
+     * @return id
+     */
+    public int getId() {
+        return id;
+    }
+
+    /**
+     * Getter for members.
+     *
+     * @return member info
+     */
+    public String getMembers() {
+        return members;
     }
 
     /**

@@ -84,11 +84,17 @@ public class Producer {
         try {
             connection.send(byteBuffer.array());
             String ack = "";
-            while (!ack.equals(Constants.ACK)) {
+            int count = 0;
+            while (!ack.equals(Constants.ACK) && count < Constants.RETRY) {
                 byte[] message = connection.receive();
                 if (message != null) {
                     ack = new String(message, StandardCharsets.UTF_8);
                 }
+                count++;
+            }
+            if (!ack.equals(Constants.ACK)) {
+                LOGGER.info("suspect broker failure");
+                return false;
             }
             LOGGER.info("message sent. topic: " + topic + ", key: "
                     + key + ", data: " + new String(data, StandardCharsets.UTF_8));

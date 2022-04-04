@@ -4,11 +4,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.curator.framework.CuratorFramework;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import project2.Config;
 import project2.Connection;
 import project2.Constants;
 import project2.Utils;
 import project2.consumer.PullReq;
 import project2.producer.PubReq;
+import project2.zookeeper.BrokerMetadata;
 import project2.zookeeper.BrokerRegister;
 import project2.zookeeper.InstanceSerializerFactory;
 
@@ -54,7 +56,7 @@ public class Broker {
     /**
      * broker register.
      */
-    private final BrokerRegister brokerRegister;
+    private BrokerRegister brokerRegister;
     /**
      * lock map for topics.
      */
@@ -75,18 +77,20 @@ public class Broker {
      * thread pool.
      */
     private final ScheduledThreadPoolExecutor threadPool;
+    /**
+     * membership table.
+     */
+    private final Member members;
 
     /**
      * Start the broker to listen on the given host name and port number. Also delete old log files
      * and create new folder (if necessary) at initialization (for testing purpose).
      *
-     * @param host             host name
-     * @param port             port number
-     * @param partition        partition number
+     * @param config           config
      * @param curatorFramework curator framework
      * @param objectMapper     object mapper
      */
-    public Broker(String host, int port, int partition, CuratorFramework curatorFramework, ObjectMapper objectMapper) {
+    public Broker(Config config, CuratorFramework curatorFramework, ObjectMapper objectMapper) {
         this.topics = new HashMap<>();
         this.tmp = new HashMap<>();
         this.topicLockMap = new ConcurrentHashMap<>();
@@ -95,15 +99,18 @@ public class Broker {
         this.isRunning = true;
         this.threadPool = new ScheduledThreadPoolExecutor(Constants.NUM_THREADS);
         try {
-            this.server = AsynchronousServerSocketChannel.open().bind(new InetSocketAddress(host, port));
+            this.server = AsynchronousServerSocketChannel.open().bind(new InetSocketAddress(config.getHost(), config.getPort()));
             LOGGER.info("broker started on: " + server.getLocalAddress());
         } catch (IOException e) {
-            LOGGER.error("can't start broker on: " + host + ":" + port + " " + e.getMessage());
+            LOGGER.error("can't start broker on: " + config.getHost() + ":" + config.getPort() + " " + e.getMessage());
         }
-        this.brokerRegister = new BrokerRegister(curatorFramework,
-                new InstanceSerializerFactory(objectMapper.reader(), objectMapper.writer()),
-                Constants.SERVICE_NAME, host, port, partition);
-        this.brokerRegister.registerAvailability();
+        if (config.isLeader()) {
+            this.brokerRegister = new BrokerRegister(curatorFramework,
+                    new InstanceSerializerFactory(objectMapper.reader(), objectMapper.writer()),
+                    Constants.SERVICE_NAME, config.getHost(), config.getPort(), config.getPartition(), config.getId());
+            this.brokerRegister.registerAvailability();
+        }
+        this.members = new Member(config);
         Utils.deleteFiles(new File(Constants.LOG_FOLDER));
         Utils.createFolder(Constants.LOG_FOLDER);
     }
@@ -162,6 +169,8 @@ public class Broker {
             processPullReq(connection, request);
         } else if (request[0] == Constants.SUB_REQ) {
             addSubscriber(connection, request);
+        } else if (new String(request, StandardCharsets.UTF_8).equals(Constants.MEM)) {
+            sendMembers(connection);
         } else {
             LOGGER.error("Invalid request: " + request[0]);
         }
@@ -177,10 +186,10 @@ public class Broker {
      * When the file is ~ the maximum allowed size file for segment file, then copy the file to the log/folder and write message to the next segment file.
      * Add offset of the message of the next segment file to the starting offset list.
      *
-     * @param request request
+     * @param request    request
      * @param connection connection
-     *                <p>
-     *                Reference for locking on certain topic: https://stackoverflow.com/questions/71007235/java-synchronized-on-the-same-file-but-not-different
+     *                   <p>
+     *                   Reference for locking on certain topic: https://stackoverflow.com/questions/71007235/java-synchronized-on-the-same-file-but-not-different
      */
     private void processPubReq(Connection connection, byte[] request) {
         PubReq pubReq = new PubReq(request);
@@ -498,10 +507,56 @@ public class Broker {
             if (!threadPool.awaitTermination(Constants.TIME_OUT, TimeUnit.MILLISECONDS)) {
                 LOGGER.error("awaitTermination()");
             }
-            brokerRegister.unregisterAvailability();
+            if (brokerRegister != null) {
+                brokerRegister.unregisterAvailability();
+            }
             server.close();
         } catch (IOException | InterruptedException e) {
             LOGGER.error("close(): " + e.getMessage());
         }
+    }
+
+    /**
+     *
+     * @param connection
+     */
+    private void sendMembers(Connection connection) {
+        try {
+            BrokerMetadata leader = members.getLeader();
+            TreeMap<BrokerMetadata, Connection> followers = members.getFollowers();
+            ByteBuffer resp = ByteBuffer.allocate(2);
+            resp.putShort((short) (followers.keySet().size() + 1));
+            connection.send(resp.array());
+            if (leader == null) {
+                resp = ByteBuffer.allocate(Constants.NONE.getBytes(StandardCharsets.UTF_8).length + 6);
+                resp.putShort((short) 0);
+                resp.putShort((short) 0);
+                resp.putShort((short) 0);
+                resp.put(Constants.NONE.getBytes(StandardCharsets.UTF_8));
+                connection.send(resp.array());
+            } else {
+                connection.send(getBrokerInfo(leader));
+            }
+            for (BrokerMetadata follower : followers.keySet()) {
+                connection.send(getBrokerInfo(follower));
+            }
+        } catch (IOException | ExecutionException | InterruptedException e) {
+            LOGGER.error("sendMembers(): " + e.getMessage());
+        }
+
+    }
+
+    /**
+     *
+     * @param broker
+     * @return
+     */
+    private byte[] getBrokerInfo(BrokerMetadata broker) {
+        ByteBuffer resp = ByteBuffer.allocate(broker.getListenAddress().getBytes(StandardCharsets.UTF_8).length + 6);
+        resp.putShort((short) broker.getListenPort());
+        resp.putShort((short) broker.getPartition());
+        resp.putShort((short) broker.getId());
+        resp.put(broker.getListenAddress().getBytes(StandardCharsets.UTF_8));
+        return resp.array();
     }
 }
