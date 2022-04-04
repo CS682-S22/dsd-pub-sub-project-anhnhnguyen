@@ -27,6 +27,10 @@ public class Constants {
      */
     public static final int SUB_REQ = 2;
     /**
+     * replication request message type.
+     */
+    public static final int REP_REQ = 3;
+    /**
      * pull request response message type.
      */
     public static final int REQ_RES = 4;

@@ -18,6 +18,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.math.BigInteger;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousServerSocketChannel;
@@ -81,6 +82,14 @@ public class Broker {
      * membership table.
      */
     private final Member members;
+    /**
+     * leader status.
+     */
+    private boolean isLeader;
+    /**
+     * list of followers.
+     */
+    private final Map<BrokerMetadata, Connection> followers;
 
     /**
      * Start the broker to listen on the given host name and port number. Also delete old log files
@@ -98,13 +107,15 @@ public class Broker {
         this.connectionLockMap = new ConcurrentHashMap<>();
         this.isRunning = true;
         this.threadPool = new ScheduledThreadPoolExecutor(Constants.NUM_THREADS);
+        this.isLeader = config.isLeader();
+        this.followers = new HashMap<>();
         try {
             this.server = AsynchronousServerSocketChannel.open().bind(new InetSocketAddress(config.getHost(), config.getPort()));
             LOGGER.info("broker started on: " + server.getLocalAddress());
         } catch (IOException e) {
             LOGGER.error("can't start broker on: " + config.getHost() + ":" + config.getPort() + " " + e.getMessage());
         }
-        if (config.isLeader()) {
+        if (isLeader) {
             this.brokerRegister = new BrokerRegister(curatorFramework,
                     new InstanceSerializerFactory(objectMapper.reader(), objectMapper.writer()),
                     Constants.SERVICE_NAME, config.getHost(), config.getPort(), config.getPartition(), config.getId());
@@ -171,6 +182,8 @@ public class Broker {
             addSubscriber(connection, request);
         } else if (new String(request, StandardCharsets.UTF_8).equals(Constants.MEM)) {
             sendMembers(connection);
+        } else if (request[0] == Constants.REP_REQ) {
+            processRepReq(connection, request);
         } else {
             LOGGER.error("Invalid request: " + request[0]);
         }
@@ -239,6 +252,31 @@ public class Broker {
             byteBuffer.put(pubReq.getData());
             tmp.get(topic).get(partition).add(byteBuffer.array());
             LOGGER.info("data added to topic: " + topic + ", partition: " + partition + ", key: " + pubReq.getKey() + ", offset: " + current);
+
+            if (isLeader) {
+                try {
+                    reconcileList();
+                    for (Connection followerConnection : followers.values()) {
+                        ByteBuffer repReq = ByteBuffer.allocate(request.length + 9);
+                        repReq.put((byte) Constants.REP_REQ);
+                        repReq.putLong(current);
+                        repReq.put(request);
+                        followerConnection.send(repReq.array());
+                        String ackMessage = "";
+                        int count = 0;
+                        while (!ackMessage.equals(Constants.ACK) && count < Constants.RETRY) {
+                            byte[] ack = followerConnection.receive();
+                            if (ack != null) {
+                                ackMessage = new String(ack, StandardCharsets.UTF_8);
+                            }
+                            count++;
+                        }
+                    }
+                } catch (IOException | InterruptedException | ExecutionException e) {
+                    LOGGER.error(e.getMessage());
+                }
+            }
+
             try {
                 LOGGER.info("sending ack to publish request");
                 connection.send(Constants.ACK.getBytes(StandardCharsets.UTF_8));
@@ -517,8 +555,9 @@ public class Broker {
     }
 
     /**
+     * Method to send member information to requesting host.
      *
-     * @param connection
+     * @param connection connection
      */
     private void sendMembers(Connection connection) {
         try {
@@ -547,9 +586,10 @@ public class Broker {
     }
 
     /**
+     * Method to get the byte array of the broker metadata.
      *
-     * @param broker
-     * @return
+     * @param broker broker metadata
+     * @return byte array
      */
     private byte[] getBrokerInfo(BrokerMetadata broker) {
         ByteBuffer resp = ByteBuffer.allocate(broker.getListenAddress().getBytes(StandardCharsets.UTF_8).length + 6);
@@ -558,5 +598,114 @@ public class Broker {
         resp.putShort((short) broker.getId());
         resp.put(broker.getListenAddress().getBytes(StandardCharsets.UTF_8));
         return resp.array();
+    }
+
+    /**
+     * Method to process replication request.
+     *
+     * @param connection connection
+     * @param request    request
+     */
+    private void processRepReq(Connection connection, byte[] request) {
+        byte[] offsetBytes = Utils.extractBytes(1, 9, request, false);
+        long offset = new BigInteger(offsetBytes).longValue();
+        byte[] message = new byte[request.length - 9];
+        System.arraycopy(request, 9, message, 0, message.length);
+        PubReq pubReq = new PubReq(message);
+        String topic = pubReq.getTopic();
+        int partition = pubReq.getKey().hashCode() % pubReq.getNumPartitions();
+        List<Long> offsetList = new ArrayList<>();
+        if (topics.containsKey(topic) && topics.get(topic).containsKey(partition)) {
+            offsetList = topics.get(topic).get(partition).get(Constants.OFFSET_INDEX);
+        }
+        if (offsetList.size() == 0 || offsetList.get(offsetList.size() - 1) == offset) {
+            processPubReq(connection, message);
+        }
+    }
+
+    /**
+     * Method to reconcile list of followers based on member data structure.
+     */
+    private void reconcileList() {
+        try {
+            TreeMap<BrokerMetadata, Connection> followerList = members.getFollowers();
+            for (BrokerMetadata follower : followerList.keySet()) {
+                if (!followers.containsKey(follower)) {
+                    AsynchronousSocketChannel socket = AsynchronousSocketChannel.open();
+                    Future<Void> future = socket.connect(new InetSocketAddress(follower.getListenAddress(), follower.getListenPort()));
+                    future.get();
+                    Connection followerConnection = new Connection(socket);
+                    followers.put(follower, followerConnection);
+                    threadPool.execute(() -> sendSnapshot(followerConnection));
+                }
+            }
+            for (BrokerMetadata follower : followers.keySet()) {
+                if (!followerList.containsKey(follower)) {
+                    followers.remove(follower);
+                }
+            }
+        } catch (IOException | InterruptedException | ExecutionException e) {
+            LOGGER.error("reconcileList(): " + e.getMessage());
+        }
+    }
+
+    /**
+     * Method to send snapshot of the database to followers.
+     *
+     * @param connection connection
+     */
+    private void sendSnapshot(Connection connection) {
+        Lock lock = connectionLockMap.computeIfAbsent(connection, l -> new ReentrantLock());
+        lock.lock();
+        try {
+            for (String topic : topics.keySet()) {
+                for (int partition : topics.get(topic).keySet()) {
+                    List<Long> offSetList = topics.get(topic).get(partition).get(Constants.OFFSET_INDEX);
+                    List<Long> startingOffsetList = topics.get(topic).get(partition).get(Constants.STARTING_OFFSET_INDEX);
+                    int i;
+                    for (i = 0; i < offSetList.size(); i++) {
+                        long offset = offSetList.get(i);
+                        int fileIndex = Arrays.binarySearch(startingOffsetList.toArray(), offset);
+                        if (fileIndex < 0) {
+                            fileIndex = -(fileIndex + 1) - 1;
+                        }
+                        String fileName = Constants.LOG_FOLDER + topic + Constants.PATH_STRING + partition +
+                                Constants.PATH_STRING + startingOffsetList.get(fileIndex) + Constants.FILE_TYPE;
+                        if (Files.exists(Paths.get(fileName))) {
+                            try (RandomAccessFile raf = new RandomAccessFile(fileName, "r")) {
+                                long length = offSetList.get(i + 1) - offSetList.get(i);
+                                long position = offSetList.get(i) - startingOffsetList.get(fileIndex);
+                                byte[] data = new byte[(int) length];
+                                raf.seek(position);
+                                raf.read(data);
+                                ByteBuffer response = ByteBuffer.allocate((int) length + 9);
+                                response.put((byte) Constants.REP_REQ);
+                                response.putLong(offset);
+                                response.put(data);
+                                connection.send(response.array());
+                                i++;
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                    int j = 0;
+                    while (i < offSetList.size()) {
+                        byte[] data = tmp.get(topic).get(partition).get(j);
+                        ByteBuffer response = ByteBuffer.allocate(data.length + 9);
+                        response.put((byte) Constants.REP_REQ);
+                        response.putLong(offSetList.get(i));
+                        response.put(data);
+                        connection.send(response.array());
+                        i++;
+                        j++;
+                    }
+                }
+            }
+        } catch (IOException | InterruptedException | ExecutionException e) {
+            LOGGER.error("sendSnapshot(): " + e.getMessage());
+        } finally {
+            lock.unlock();
+        }
     }
 }
