@@ -116,13 +116,8 @@ public class ConsumerDriver {
             BrokerMetadata broker = findBroker(brokers, i);
             if (broker != null) {
                 Consumer consumer;
-                if (config.isPull()) {
-                    consumer = new Consumer(broker.getListenAddress(), broker.getListenPort(),
-                            config.getTopic(), config.getPosition(), i);
-                } else {
-                    consumer = new PushConsumer(broker.getListenAddress(), broker.getListenPort(),
-                            config.getTopic(), config.getPosition(), i);
-                }
+                consumer = new Consumer(broker.getListenAddress(), broker.getListenPort(),
+                        config.getTopic(), config.getPosition(), i);
                 clients.put(consumer, i);
             }
         }

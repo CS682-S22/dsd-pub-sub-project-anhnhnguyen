@@ -38,10 +38,6 @@ public class Config {
      */
     private final String zkConnection;
     /**
-     * boolean for pull/push consumer.
-     */
-    private final boolean isPull;
-    /**
      * topic map.
      */
     private final Map<String, Integer> topics;
@@ -76,7 +72,6 @@ public class Config {
      * @param position      starting position to pull from
      * @param partition     partition
      * @param zkConnection  zkConnection
-     * @param isPull        isPull
      * @param numPartitions number of total partitions
      * @param numBrokers    number of brokers
      * @param topics        map between topic and number of partitions for the topic
@@ -85,7 +80,7 @@ public class Config {
      * @param members       members
      */
     public Config(String host, int port, String file, String topic, long position, int partition, boolean isLeader, String members,
-                  String zkConnection, boolean isPull, Map<String, Integer> topics, int numPartitions, int numBrokers, int id) {
+                  String zkConnection, Map<String, Integer> topics, int numPartitions, int numBrokers, int id) {
         this.host = host;
         this.port = port;
         this.file = file;
@@ -93,7 +88,6 @@ public class Config {
         this.position = position;
         this.partition = partition;
         this.zkConnection = zkConnection;
-        this.isPull = isPull;
         this.topics = topics;
         this.numPartitions = numPartitions;
         this.numBrokers = numBrokers;
@@ -163,15 +157,6 @@ public class Config {
      */
     public String getZkConnection() {
         return zkConnection;
-    }
-
-    /**
-     * Getter for boolean status for pull/push consumer.
-     *
-     * @return isPull
-     */
-    public boolean isPull() {
-        return isPull;
     }
 
     /**
