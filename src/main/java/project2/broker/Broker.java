@@ -64,7 +64,7 @@ public class Broker {
     /**
      * membership table.
      */
-    private final Member members;
+    private Member members;
     /**
      * leader status.
      */
@@ -105,7 +105,9 @@ public class Broker {
                     Constants.SERVICE_NAME, config.getHost(), config.getPort(), config.getPartition(), config.getId());
             this.brokerRegister.registerAvailability();
         }
-        this.members = new Member(config);
+        threadPool.schedule(() -> {
+            members = new Member(config);
+        }, 0, TimeUnit.MILLISECONDS);
         Utils.deleteFiles(new File(Constants.LOG_FOLDER));
         Utils.createFolder(Constants.LOG_FOLDER);
     }
@@ -326,6 +328,9 @@ public class Broker {
             if (!threadPool.awaitTermination(Constants.TIME_OUT, TimeUnit.MILLISECONDS)) {
                 LOGGER.error("awaitTermination()");
             }
+            for (Connection connection : followers.values()) {
+                connection.close();
+            }
             if (brokerRegister != null) {
                 brokerRegister.unregisterAvailability();
             }
@@ -342,8 +347,14 @@ public class Broker {
      */
     private void sendMembers(Connection connection) {
         try {
+            if (members == null) {
+                ByteBuffer resp = ByteBuffer.allocate(2);
+                resp.putShort((short) (0));
+                connection.send(resp.array());
+                return;
+            }
             BrokerMetadata leader = members.getLeader();
-            TreeMap<BrokerMetadata, Connection> followers = members.getFollowers();
+            Map<BrokerMetadata, Connection> followers = members.getFollowers();
             ByteBuffer resp = ByteBuffer.allocate(2);
             resp.putShort((short) (followers.keySet().size() + 1));
             connection.send(resp.array());
@@ -363,7 +374,6 @@ public class Broker {
         } catch (IOException | ExecutionException | InterruptedException e) {
             LOGGER.error("sendMembers(): " + e.getMessage());
         }
-
     }
 
     /**
@@ -409,6 +419,9 @@ public class Broker {
      * Method to reconcile list of followers based on member data structure.
      */
     private void reconcileList() {
+        if (members == null) {
+            return;
+        }
         try {
             TreeMap<BrokerMetadata, Connection> followerList = members.getFollowers();
             for (BrokerMetadata follower : followerList.keySet()) {

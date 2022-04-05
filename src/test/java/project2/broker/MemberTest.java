@@ -62,9 +62,13 @@ class MemberTest {
             });
 
             t1.start();
+            Thread.sleep(1000);
             t1a.start();
+            Thread.sleep(1000);
             t1b.start();
+            Thread.sleep(1000);
             t1c.start();
+            Thread.sleep(1000);
             t1d.start();
 
             member1 = new Member(config1);
@@ -73,7 +77,7 @@ class MemberTest {
             member1c = new Member(config1c);
             member1d = new Member(config1d);
 
-        } catch (FileNotFoundException e) {
+        } catch (FileNotFoundException | InterruptedException e) {
             fail(e.getMessage());
         }
     }
@@ -101,19 +105,19 @@ class MemberTest {
         assertEquals(leader.getPartition(), config1.getPartition());
         assertEquals(leader.getId(), config1.getId());
 
-        leader = member1a.getLeader();
+        leader = member1b.getLeader();
         assertEquals(leader.getListenAddress(), config1.getHost());
         assertEquals(leader.getListenPort(), config1.getPort());
         assertEquals(leader.getPartition(), config1.getPartition());
         assertEquals(leader.getId(), config1.getId());
 
-        leader = member1a.getLeader();
+        leader = member1c.getLeader();
         assertEquals(leader.getListenAddress(), config1.getHost());
         assertEquals(leader.getListenPort(), config1.getPort());
         assertEquals(leader.getPartition(), config1.getPartition());
         assertEquals(leader.getId(), config1.getId());
 
-        leader = member1a.getLeader();
+        leader = member1d.getLeader();
         assertEquals(leader.getListenAddress(), config1.getHost());
         assertEquals(leader.getListenPort(), config1.getPort());
         assertEquals(leader.getPartition(), config1.getPartition());
@@ -122,11 +126,6 @@ class MemberTest {
 
     @Test
     void testGetFollowers() {
-        try {
-            Thread.sleep(1000);
-        } catch (InterruptedException e) {
-            fail(e.getMessage());
-        }
         TreeMap<BrokerMetadata, Connection> followers = member1.getFollowers();
         assertEquals(followers.keySet().size(), 4);
 
