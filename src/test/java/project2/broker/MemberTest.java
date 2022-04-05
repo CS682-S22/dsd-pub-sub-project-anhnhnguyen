@@ -24,6 +24,11 @@ class MemberTest {
     private Member member1b;
     private Member member1c;
     private Member member1d;
+    private Broker broker1;
+    private Broker broker1a;
+    private Broker broker1b;
+    private Broker broker1c;
+    private Broker broker1d;
 
     @BeforeEach
     void setUp() {
@@ -37,28 +42,28 @@ class MemberTest {
             Config config1d = new Gson().fromJson(new FileReader("configs/broker1d.json"), Config.class);
 
             Thread t1 = new Thread(() -> {
-                Broker broker = new Broker(config1, curator.getCuratorFramework(), curator.getObjectMapper());
-                broker.start();
+                broker1 = new Broker(config1, curator.getCuratorFramework(), curator.getObjectMapper());
+                broker1.start();
             });
 
             Thread t1a = new Thread(() -> {
-                Broker broker = new Broker(config1a, curator.getCuratorFramework(), curator.getObjectMapper());
-                broker.start();
+                broker1a = new Broker(config1a, curator.getCuratorFramework(), curator.getObjectMapper());
+                broker1a.start();
             });
 
             Thread t1b = new Thread(() -> {
-                Broker broker = new Broker(config1b, curator.getCuratorFramework(), curator.getObjectMapper());
-                broker.start();
+                broker1b = new Broker(config1b, curator.getCuratorFramework(), curator.getObjectMapper());
+                broker1b.start();
             });
 
             Thread t1c = new Thread(() -> {
-                Broker broker = new Broker(config1c, curator.getCuratorFramework(), curator.getObjectMapper());
-                broker.start();
+                broker1c = new Broker(config1c, curator.getCuratorFramework(), curator.getObjectMapper());
+                broker1c.start();
             });
 
             Thread t1d = new Thread(() -> {
-                Broker broker = new Broker(config1d, curator.getCuratorFramework(), curator.getObjectMapper());
-                broker.start();
+                broker1d = new Broker(config1d, curator.getCuratorFramework(), curator.getObjectMapper());
+                broker1d.start();
             });
 
             t1.start();
@@ -84,6 +89,11 @@ class MemberTest {
 
     @AfterEach
     void tearDown() {
+        broker1.close();
+        broker1a.close();
+        broker1b.close();
+        broker1c.close();
+        broker1d.close();
         member1.close();
         member1a.close();
         member1b.close();

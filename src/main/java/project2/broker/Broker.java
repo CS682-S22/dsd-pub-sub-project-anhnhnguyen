@@ -334,6 +334,7 @@ public class Broker {
             if (brokerRegister != null) {
                 brokerRegister.unregisterAvailability();
             }
+            members.close();
             server.close();
         } catch (IOException | InterruptedException e) {
             LOGGER.error("close(): " + e.getMessage());

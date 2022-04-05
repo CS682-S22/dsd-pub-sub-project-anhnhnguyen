@@ -13,6 +13,7 @@ import java.math.BigInteger;
 import java.net.InetSocketAddress;
 import java.nio.channels.AsynchronousSocketChannel;
 import java.nio.charset.StandardCharsets;
+import java.util.Comparator;
 import java.util.TreeMap;
 import java.util.concurrent.*;
 
@@ -32,7 +33,7 @@ public class Member {
             this.leader = new BrokerMetadata(this.host, this.port, config.getPartition(), config.getId());
             LOGGER.info("leader: " + config.getId());
         }
-        this.followers = new TreeMap<>((o1, o2) -> Integer.compare(o2.getId(), o1.getId()));
+        this.followers = new TreeMap<>(Comparator.comparingInt(BrokerMetadata::getId));
         BrokerMetadata follower = new Gson().fromJson(config.getMembers(), BrokerMetadata.class);
         AsynchronousSocketChannel socket = null;
         try {
@@ -48,7 +49,9 @@ public class Member {
                     future.get();
                     connected = true;
                 } catch (ExecutionException | InterruptedException e) {
-                    socket.close();
+                    if (socket != null) {
+                        socket.close();
+                    }
                 }
             }
             LOGGER.info("connected with follower: " + follower.getId());
@@ -66,9 +69,13 @@ public class Member {
     private void exchangeInfo() {
         if (!inElection) {
             LOGGER.info("requesting membership info");
+            TreeMap<BrokerMetadata, Connection> copy = new TreeMap<>(Comparator.comparingInt(BrokerMetadata::getId));
             for (BrokerMetadata broker : followers.keySet()) {
+                copy.put(broker, followers.get(broker));
+            }
+            for (BrokerMetadata broker : copy.keySet()) {
                 try {
-                    Connection connection = followers.get(broker);
+                    Connection connection = copy.get(broker);
                     connection.send(Constants.MEM.getBytes(StandardCharsets.UTF_8));
                     byte[] resp = connection.receive();
                     int count = 0;
@@ -82,6 +89,7 @@ public class Member {
                         updateMembers(resp, connection);
                     }
                 } catch (IOException | InterruptedException | ExecutionException e) {
+                    LOGGER.error("exchangeInfo(): " + e.getMessage());
                     handleFailure();
                 }
             }
@@ -129,6 +137,7 @@ public class Member {
                     retries++;
                 }
             } catch (IOException | InterruptedException | ExecutionException e) {
+                LOGGER.error("updateMembers(): " + e.getMessage());
                 handleFailure();
             }
         }
