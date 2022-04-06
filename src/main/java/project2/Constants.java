@@ -97,7 +97,7 @@ public class Constants {
     /**
      * retry.
      */
-    public static final int RETRY = 5;
+    public static final int RETRY = 20;
     /**
      * no leader info.
      */

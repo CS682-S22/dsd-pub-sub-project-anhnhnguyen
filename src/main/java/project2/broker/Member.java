@@ -93,13 +93,13 @@ public class Member {
                         count++;
                     }
                     if (resp == null) {
-                        handleFailure();
+                        handleFailure(broker);
                     } else {
-                        updateMembers(resp, connection);
+                        updateMembers(resp, connection, broker);
                     }
                 } catch (IOException | InterruptedException | ExecutionException e) {
                     LOGGER.error("exchangeInfo(): " + e.getMessage());
-                    handleFailure();
+                    handleFailure(broker);
                 }
             }
         }
@@ -113,11 +113,15 @@ public class Member {
         return followers;
     }
 
-    private void handleFailure() {
-
+    private void handleFailure(BrokerMetadata broker) {
+        if (broker.equals(leader)) {
+            startElection();
+        }
+        followers.remove(broker);
+        LOGGER.info("removed failed broker");
     }
 
-    private synchronized void updateMembers(byte[] resp, Connection connection) {
+    private synchronized void updateMembers(byte[] resp, Connection connection, BrokerMetadata bm) {
         int numBrokers = new BigInteger(resp).intValue();
         int count = 0;
         int retries = 0;
@@ -147,11 +151,11 @@ public class Member {
                 }
             } catch (IOException | InterruptedException | ExecutionException e) {
                 LOGGER.error("updateMembers(): " + e.getMessage());
-                handleFailure();
+                handleFailure(bm);
             }
         }
         if (count != numBrokers && retries == Constants.RETRY) {
-            handleFailure();
+            handleFailure(bm);
         }
     }
 
