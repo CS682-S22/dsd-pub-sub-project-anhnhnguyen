@@ -15,20 +15,12 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
 
 public class Topic {
     /**
      * a hashmap that maps topic to a map between partition number and list of offsets in the topic and a list of first offset in segment files.
      */
     private final Map<String, Map<Integer, List<List<Long>>>> topics;
-
-    /**
-     * lock map for topics.
-     */
-    private final Map<String, Lock> topicLockMap;
 
     /**
      * in-memory data structure to store message before flushing to disk.
@@ -40,68 +32,61 @@ public class Topic {
     public Topic() {
         this.topics = new HashMap<>();
         this.tmp = new HashMap<>();
-        this.topicLockMap = new ConcurrentHashMap<>();
     }
 
     public Topic(Topic other) {
-        this.topics = other.topics;
-        this.tmp = other.tmp;
-        this.topicLockMap = other.topicLockMap;
+        this.topics = new HashMap<>(other.topics);
+        this.tmp = new HashMap<>(other.tmp);
     }
 
     public void updateTopic(PubReq pubReq) {
         String topic = pubReq.getTopic();
-        Lock lock = topicLockMap.computeIfAbsent(topic, t -> new ReentrantLock());
-        lock.lock();
-        try {
-            Map<Integer, List<List<Long>>> partitionMap;
-            if (topics.containsKey(topic)) {
-                partitionMap = topics.get(topic);
-            } else {
-                partitionMap = new HashMap<>();
-                topics.put(topic, partitionMap);
-            }
 
-            int partition = pubReq.getKey().hashCode() % pubReq.getNumPartitions();
-            List<List<Long>> indexes;
-            if (partitionMap.containsKey(partition)) {
-                indexes = partitionMap.get(partition);
-            } else {
-                indexes = new ArrayList<>();
-                partitionMap.put(partition, indexes);
-            }
-
-            if (indexes.size() == 0) {
-                initializeTopic(indexes, topic, partition);
-            }
-
-            // add next message's id to the offset list
-            long current = indexes.get(Constants.OFFSET_INDEX).get(indexes.get(Constants.OFFSET_INDEX).size() - 1);
-            long offset = current + pubReq.getData().length + pubReq.getKey().getBytes(StandardCharsets.UTF_8).length + 1;
-            indexes.get(Constants.OFFSET_INDEX).add(offset);
-
-            // add number of partitions info for each of the topic to the list
-            if (indexes.get(Constants.NUM_PARTITIONS_INDEX).size() == 0 || indexes.get(Constants.NUM_PARTITIONS_INDEX).get(0) != pubReq.getNumPartitions()) {
-                indexes.get(Constants.NUM_PARTITIONS_INDEX).add(0, (long) pubReq.getNumPartitions());
-            }
-
-            // create new segment file if necessary and add the current offset to the list of starting offsets
-            long currentFile = indexes.get(Constants.STARTING_OFFSET_INDEX).get(indexes.get(Constants.STARTING_OFFSET_INDEX).size() - 1);
-            if (offset - currentFile > Constants.SEGMENT_SIZE) {
-                initializeSegmentFile(topic, currentFile, indexes, current, partition);
-            }
-
-            // append key and data to tmp
-            ByteBuffer byteBuffer = ByteBuffer.allocate(pubReq.getKey().getBytes(StandardCharsets.UTF_8).length +
-                    pubReq.getData().length + 1);
-            byteBuffer.put(pubReq.getKey().getBytes(StandardCharsets.UTF_8));
-            byteBuffer.put((byte) 0);
-            byteBuffer.put(pubReq.getData());
-            tmp.get(topic).get(partition).add(byteBuffer.array());
-            LOGGER.info("data added to topic: " + topic + ", partition: " + partition + ", key: " + pubReq.getKey() + ", offset: " + current);
-        } finally {
-            lock.unlock();
+        Map<Integer, List<List<Long>>> partitionMap;
+        if (topics.containsKey(topic)) {
+            partitionMap = topics.get(topic);
+        } else {
+            partitionMap = new HashMap<>();
+            topics.put(topic, partitionMap);
         }
+
+        int partition = pubReq.getKey().hashCode() % pubReq.getNumPartitions();
+        List<List<Long>> indexes;
+        if (partitionMap.containsKey(partition)) {
+            indexes = partitionMap.get(partition);
+        } else {
+            indexes = new ArrayList<>();
+            partitionMap.put(partition, indexes);
+        }
+
+        if (indexes.size() == 0) {
+            initializeTopic(indexes, topic, partition);
+        }
+
+        // add next message's id to the offset list
+        long current = indexes.get(Constants.OFFSET_INDEX).get(indexes.get(Constants.OFFSET_INDEX).size() - 1);
+        long offset = current + pubReq.getData().length + pubReq.getKey().getBytes(StandardCharsets.UTF_8).length + 1;
+        indexes.get(Constants.OFFSET_INDEX).add(offset);
+
+        // add number of partitions info for each of the topic to the list
+        if (indexes.get(Constants.NUM_PARTITIONS_INDEX).size() == 0 || indexes.get(Constants.NUM_PARTITIONS_INDEX).get(0) != pubReq.getNumPartitions()) {
+            indexes.get(Constants.NUM_PARTITIONS_INDEX).add(0, (long) pubReq.getNumPartitions());
+        }
+
+        // create new segment file if necessary and add the current offset to the list of starting offsets
+        long currentFile = indexes.get(Constants.STARTING_OFFSET_INDEX).get(indexes.get(Constants.STARTING_OFFSET_INDEX).size() - 1);
+        if (offset - currentFile > Constants.SEGMENT_SIZE) {
+            initializeSegmentFile(topic, currentFile, indexes, current, partition);
+        }
+
+        // append key and data to tmp
+        ByteBuffer byteBuffer = ByteBuffer.allocate(pubReq.getKey().getBytes(StandardCharsets.UTF_8).length +
+                pubReq.getData().length + 1);
+        byteBuffer.put(pubReq.getKey().getBytes(StandardCharsets.UTF_8));
+        byteBuffer.put((byte) 0);
+        byteBuffer.put(pubReq.getData());
+        tmp.get(topic).get(partition).add(byteBuffer.array());
+        LOGGER.info("data added to topic: " + topic + ", partition: " + partition + ", key: " + pubReq.getKey() + ", offset: " + current);
     }
 
     /**

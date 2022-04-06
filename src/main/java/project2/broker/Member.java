@@ -12,16 +12,18 @@ import java.io.IOException;
 import java.math.BigInteger;
 import java.net.InetSocketAddress;
 import java.nio.channels.AsynchronousSocketChannel;
-import java.nio.charset.StandardCharsets;
 import java.util.Comparator;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.TreeMap;
-import java.util.concurrent.*;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 
 public class Member {
     private final Logger LOGGER = LoggerFactory.getLogger(Member.class);
     private BrokerMetadata leader;
     private final TreeMap<BrokerMetadata, Connection> followers;
-    private final ScheduledExecutorService scheduler;
+    private final Timer timer;
     private volatile boolean inElection;
     private final String host;
     private final int port;
@@ -62,8 +64,13 @@ public class Member {
             LOGGER.error(e.getMessage());
         }
         this.inElection = false;
-        this.scheduler = Executors.newSingleThreadScheduledExecutor();
-        this.scheduler.scheduleWithFixedDelay(this::exchangeInfo, 0, Constants.INTERVAL, TimeUnit.MILLISECONDS);
+        this.timer = new Timer();
+        this.timer.schedule(new TimerTask() {
+            @Override
+            public void run() {
+                exchangeInfo();
+            }
+        }, 0, Constants.INTERVAL);
     }
 
     private void exchangeInfo() {
@@ -153,16 +160,9 @@ public class Member {
     }
 
     public void close() {
-        try {
-            scheduler.shutdownNow();
-            if (!scheduler.awaitTermination(Constants.TIME_OUT, TimeUnit.MILLISECONDS)) {
-                LOGGER.error("awaitTermination()");
-            }
-            for (Connection connection : followers.values()) {
-                connection.close();
-            }
-        } catch (InterruptedException e) {
-            LOGGER.error(e.getMessage());
+        timer.cancel();
+        for (Connection connection : followers.values()) {
+            connection.close();
         }
     }
 }

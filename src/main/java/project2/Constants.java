@@ -95,10 +95,6 @@ public class Constants {
      */
     public static final int NUM_PARTS = 3;
     /**
-     * thread pool.
-     */
-    public static final int NUM_THREADS = 10;
-    /**
      * retry.
      */
     public static final int RETRY = 5;

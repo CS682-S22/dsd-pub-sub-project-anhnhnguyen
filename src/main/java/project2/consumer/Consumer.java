@@ -13,12 +13,7 @@ import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.Collection;
-import java.util.LinkedList;
-import java.util.Queue;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.*;
 
 /**
  * Class that pulls message from the Broker by specifying topic and starting position to pull.
@@ -33,15 +28,15 @@ public class Consumer extends ConsumerDriver {
     /**
      * topic.
      */
-    protected final String topic;
+    private final String topic;
     /**
      * starting position.
      */
-    protected volatile long startingPosition;
+    private volatile long startingPosition;
     /**
      * partition.
      */
-    protected final int partition;
+    private final int partition;
     /**
      * socket.
      */
@@ -53,15 +48,15 @@ public class Consumer extends ConsumerDriver {
     /**
      * data output stream.
      */
-    protected DataOutputStream dos;
+    private DataOutputStream dos;
     /**
      * message queue.
      */
-    protected final Queue<byte[]> queue;
+    private final Queue<byte[]> queue;
     /**
      * scheduler.
      */
-    protected ScheduledExecutorService scheduler;
+    private Timer timer;
     /**
      * host.
      */
@@ -95,9 +90,14 @@ public class Consumer extends ConsumerDriver {
         this.startingPosition = startingPosition;
         this.partition = partition;
         this.queue = new LinkedList<>();
-        this.scheduler = Executors.newSingleThreadScheduledExecutor();
+        this.timer = new Timer();
         // thread to periodically send a request to pull data and populate the queue where application polls from
-        this.scheduler.scheduleWithFixedDelay(this::request, 0, Constants.INTERVAL, TimeUnit.MILLISECONDS);
+        this.timer.schedule(new TimerTask() {
+            @Override
+            public void run() {
+                request();
+            }
+        }, 0, Constants.INTERVAL);
     }
 
     /**
@@ -173,8 +173,14 @@ public class Consumer extends ConsumerDriver {
                 socket = new Socket(broker.getListenAddress(), broker.getListenPort());
                 dis = new DataInputStream(socket.getInputStream());
                 dos = new DataOutputStream(socket.getOutputStream());
-                scheduler = Executors.newSingleThreadScheduledExecutor();
-                scheduler.scheduleWithFixedDelay(this::request, 0, Constants.INTERVAL, TimeUnit.MILLISECONDS);
+                timer = new Timer();
+                // thread to periodically send a request to pull data and populate the queue where application polls from
+                timer.schedule(new TimerTask() {
+                    @Override
+                    public void run() {
+                        request();
+                    }
+                }, 0, Constants.INTERVAL);
             } catch (IOException exc) {
                 LOGGER.error(exc.getMessage());
             }
@@ -210,17 +216,14 @@ public class Consumer extends ConsumerDriver {
      */
     public void close() {
         try {
-            scheduler.shutdownNow();
-            if (!scheduler.awaitTermination(Constants.TIME_OUT, TimeUnit.MILLISECONDS)) {
-                LOGGER.error("awaitTermination()");
-            }
+            timer.cancel();
             socket.shutdownInput();
             socket.shutdownOutput();
             socket.close();
             dis.close();
             dos.close();
             LOGGER.info("closing consumer");
-        } catch (IOException | InterruptedException e) {
+        } catch (IOException e) {
             LOGGER.error("closer(): " + e.getMessage());
         }
     }

@@ -27,7 +27,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
-import java.util.concurrent.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.locks.Lock;
 
 /**
  * Class that listens to request to publish message from Producer and request to pull message from Consumer.
@@ -52,9 +56,9 @@ public class Broker {
      */
     private BrokerRegister brokerRegister;
     /**
-     * thread pool.
+     * timer to schedule task.
      */
-    private final ScheduledThreadPoolExecutor threadPool;
+    private final Timer timer;
     /**
      * membership table.
      */
@@ -83,6 +87,10 @@ public class Broker {
      * count of pub req from leader.
      */
     private int pubCount;
+    /**
+     * lock map for connection.
+     */
+    private final Map<Connection, Lock> connectionLockMap;
 
     /**
      * Start the broker to listen on the given host name and port number. Also delete old log files
@@ -95,12 +103,13 @@ public class Broker {
     public Broker(Config config, CuratorFramework curatorFramework, ObjectMapper objectMapper) {
         this.topicStruct = new Topic();
         this.isRunning = true;
-        this.threadPool = new ScheduledThreadPoolExecutor(Constants.NUM_THREADS);
+        this.timer = new Timer();
         this.isLeader = config.isLeader();
         this.followers = new ConcurrentHashMap<>();
         this.repQueue = new ConcurrentLinkedQueue<>();
         this.isCatchingUp = true;
         this.pubCount = 0;
+        this.connectionLockMap = new ConcurrentHashMap<>();
         try {
             this.server = AsynchronousServerSocketChannel.open().bind(new InetSocketAddress(config.getHost(), config.getPort()));
             LOGGER.info("broker started on: " + server.getLocalAddress());
@@ -114,41 +123,54 @@ public class Broker {
             this.brokerRegister.registerAvailability();
             LOGGER.info("registering with Zookeeper");
         }
-        threadPool.schedule(() -> {
-            members = new Member(config);
-            LOGGER.info("set up members table");
-        }, 0, TimeUnit.MILLISECONDS);
+        this.timer.schedule(new TimerTask() {
+            @Override
+            public void run() {
+                members = new Member(config);
+                LOGGER.info("set up members table");
+            }
+        }, 0);
         Utils.deleteFiles(new File(Constants.LOG_FOLDER));
         Utils.createFolder(Constants.LOG_FOLDER);
-        if (!isLeader) {
-            threadPool.schedule(() -> {
-                if (pubCount == 0) {
-                    isCatchingUp = false;
-                    LOGGER.info("No need to catch up");
+        if (!this.isLeader) {
+            this.timer.schedule(new TimerTask() {
+                @Override
+                public void run() {
+                    if (pubCount == 0) {
+                        isCatchingUp = false;
+                        LOGGER.info("No need to catch up");
+                    }
                 }
-            }, Constants.TIME_OUT * 120, TimeUnit.MILLISECONDS);
-            threadPool.scheduleWithFixedDelay(() -> {
-                if (!isCatchingUp) {
-                    while (!repQueue.isEmpty()) {
-                        byte[] req = repQueue.poll();
-                        LOGGER.info("polling off replication queue");
-                        byte[] offsetBytes = Utils.extractBytes(1, 9, req, false);
-                        long offset = new BigInteger(offsetBytes).longValue();
-                        byte[] data = new byte[req.length - 9];
-                        System.arraycopy(req, 9, data, 0, data.length);
-                        PubReq pubReq = new PubReq(data);
-                        String topic = pubReq.getTopic();
-                        int partition = pubReq.getKey().hashCode() % pubReq.getNumPartitions();
-                        List<Long> offsetList = new ArrayList<>();
-                        if (topicStruct.getTopics().containsKey(topic) && topicStruct.getTopics().get(topic).containsKey(partition)) {
-                            offsetList = topicStruct.getTopics().get(topic).get(partition).get(Constants.OFFSET_INDEX);
-                        }
-                        if (offsetList.size() == 0 || offsetList.get(offsetList.size() - 1) == offset) {
+            }, Constants.TIME_OUT * 120);
+
+            TimerTask task = new TimerTask() {
+                @Override
+                public void run() {
+                    LOGGER.info("try polling");
+                    if (!isCatchingUp) {
+                        while (!repQueue.isEmpty()) {
+                            byte[] req = repQueue.poll();
+                            LOGGER.info("polling off replication queue");
+                            byte[] offsetBytes = Utils.extractBytes(1, 9, req, false);
+                            long offset = new BigInteger(offsetBytes).longValue();
+                            byte[] data = new byte[req.length - 9];
+                            System.arraycopy(req, 9, data, 0, data.length);
+                            PubReq pubReq = new PubReq(data);
+//                            String topic = pubReq.getTopic();
+//                            int partition = pubReq.getKey().hashCode() % pubReq.getNumPartitions();
+//                            List<Long> offsetList = new ArrayList<>();
+//                            if (topicStruct.getTopics().containsKey(topic) && topicStruct.getTopics().get(topic).containsKey(partition)) {
+//                                offsetList = topicStruct.getTopics().get(topic).get(partition).get(Constants.OFFSET_INDEX);
+//                            }
+//                            if (offsetList.size() == 0 || offsetList.get(offsetList.size() - 1) == offset) {
+//                                topicStruct.updateTopic(pubReq);
+//                            }
                             topicStruct.updateTopic(pubReq);
                         }
                     }
                 }
-            }, 0, Constants.INTERVAL, TimeUnit.MILLISECONDS);
+            };
+            this.timer.schedule(task, 0, Constants.INTERVAL);
         }
     }
 
@@ -233,7 +255,7 @@ public class Broker {
      *                   <p>
      *                   Reference for locking on certain topic: https://stackoverflow.com/questions/71007235/java-synchronized-on-the-same-file-but-not-different
      */
-    private void processPubReq(Connection connection, byte[] request) {
+    private synchronized void processPubReq(Connection connection, byte[] request) {
         PubReq pubReq = new PubReq(request);
         LOGGER.info("publish request. topic: " + pubReq.getTopic() + ", key: " + pubReq.getKey() +
                 ", data: " + new String(pubReq.getData(), StandardCharsets.UTF_8));
@@ -288,10 +310,10 @@ public class Broker {
         String topic = pullReq.getTopic();
         long startingPosition = pullReq.getStartingPosition();
         LOGGER.info("pull request. topic: " + topic + ", partition: " + pullReq.getPartition() + ", starting position: " + startingPosition);
-        Map<String, Map<Integer, List<List<Long>>>> topics = topicStruct.getTopics();
-        if (topics.containsKey(topic)) {
+        Map<String, Map<Integer, List<List<Long>>>> topics = new HashMap<>(topicStruct.getTopics());
+        if (topics.containsKey(topic) && topics.get(topic).containsKey(pullReq.getPartition())) {
             List<List<Long>> list = topics.get(topic).get(pullReq.getPartition());
-            if (list.size() == 2) {
+            if (list.size() == 3) {
                 List<Long> offSetList = list.get(Constants.OFFSET_INDEX);
                 List<Long> startingOffsetList = list.get(Constants.STARTING_OFFSET_INDEX);
 
@@ -375,10 +397,7 @@ public class Broker {
         try {
             LOGGER.info("closing broker");
             isRunning = false;
-            threadPool.shutdown();
-            if (!threadPool.awaitTermination(Constants.TIME_OUT, TimeUnit.MILLISECONDS)) {
-                LOGGER.error("awaitTermination()");
-            }
+            timer.cancel();
             for (Connection connection : followers.values()) {
                 connection.close();
             }
@@ -387,7 +406,7 @@ public class Broker {
             }
             members.close();
             server.close();
-        } catch (IOException | InterruptedException e) {
+        } catch (IOException e) {
             LOGGER.error("close(): " + e.getMessage());
         }
     }
@@ -470,7 +489,7 @@ public class Broker {
             return;
         }
         try {
-            TreeMap<BrokerMetadata, Connection> followerList = members.getFollowers();
+            TreeMap<BrokerMetadata, Connection> followerList = new TreeMap<>(members.getFollowers());
             for (BrokerMetadata follower : followerList.keySet()) {
                 if (!followers.containsKey(follower)) {
                     AsynchronousSocketChannel socket = AsynchronousSocketChannel.open();
@@ -478,7 +497,13 @@ public class Broker {
                     future.get();
                     Connection followerConnection = new Connection(socket);
                     followers.put(follower, followerConnection);
-                    threadPool.schedule(() -> sendSnapshot(follower), 0, TimeUnit.MILLISECONDS);
+                    timer.schedule(new TimerTask() {
+                        @Override
+                        public void run() {
+                            sendSnapshot(follower);
+                        }
+                    }, 0);
+                    Thread.sleep(Constants.TIME_OUT * 4);
                 }
             }
             for (BrokerMetadata follower : followers.keySet()) {
