@@ -43,7 +43,13 @@ public class Topic {
         this.topicLockMap = new ConcurrentHashMap<>();
     }
 
-    public long updateTopic(PubReq pubReq) {
+    public Topic(Topic other) {
+        this.topics = other.topics;
+        this.tmp = other.tmp;
+        this.topicLockMap = other.topicLockMap;
+    }
+
+    public void updateTopic(PubReq pubReq) {
         String topic = pubReq.getTopic();
         Lock lock = topicLockMap.computeIfAbsent(topic, t -> new ReentrantLock());
         lock.lock();
@@ -74,6 +80,11 @@ public class Topic {
             long offset = current + pubReq.getData().length + pubReq.getKey().getBytes(StandardCharsets.UTF_8).length + 1;
             indexes.get(Constants.OFFSET_INDEX).add(offset);
 
+            // add number of partitions info for each of the topic to the list
+            if (indexes.get(Constants.NUM_PARTITIONS_INDEX).size() == 0 || indexes.get(Constants.NUM_PARTITIONS_INDEX).get(0) != pubReq.getNumPartitions()) {
+                indexes.get(Constants.NUM_PARTITIONS_INDEX).add(0, (long) pubReq.getNumPartitions());
+            }
+
             // create new segment file if necessary and add the current offset to the list of starting offsets
             long currentFile = indexes.get(Constants.STARTING_OFFSET_INDEX).get(indexes.get(Constants.STARTING_OFFSET_INDEX).size() - 1);
             if (offset - currentFile > Constants.SEGMENT_SIZE) {
@@ -88,7 +99,6 @@ public class Topic {
             byteBuffer.put(pubReq.getData());
             tmp.get(topic).get(partition).add(byteBuffer.array());
             LOGGER.info("data added to topic: " + topic + ", partition: " + partition + ", key: " + pubReq.getKey() + ", offset: " + current);
-            return current;
         } finally {
             lock.unlock();
         }
@@ -125,6 +135,10 @@ public class Topic {
         List<Long> startingOffsetList = new ArrayList<>();
         startingOffsetList.add((long) 0);
         indexes.add(startingOffsetList);
+
+        // initialize the number of partitions list for the topic
+        List<Long> numPartitionsList = new ArrayList<>();
+        indexes.add(numPartitionsList);
     }
 
     /**

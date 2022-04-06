@@ -76,7 +76,9 @@ public class Member {
             for (BrokerMetadata broker : copy.keySet()) {
                 try {
                     Connection connection = copy.get(broker);
-                    connection.send(Constants.MEM.getBytes(StandardCharsets.UTF_8));
+                    byte[] req = new byte[1];
+                    req[0] = Constants.MEM_REQ;
+                    connection.send(req);
                     byte[] resp = connection.receive();
                     int count = 0;
                     while (resp == null && count < Constants.RETRY) {

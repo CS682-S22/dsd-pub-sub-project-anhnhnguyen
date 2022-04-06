@@ -151,7 +151,7 @@ public class Consumer extends ConsumerDriver {
             getMessage();
         } catch (IOException e) {
             LOGGER.error("poll(): " + e.getMessage());
-            scheduler.shutdown();
+            close();
             Collection<BrokerMetadata> brokers = curator.findBrokers();
             BrokerMetadata broker = findBroker(brokers, partition);
             while (broker == null || broker.getListenAddress().equals(host) && broker.getListenPort() == port) {
@@ -167,6 +167,7 @@ public class Consumer extends ConsumerDriver {
                 broker = findBroker(brokers, partition);
             }
             try {
+                // TODO: this seems to create a new Consumer
                 host = broker.getListenAddress();
                 port = broker.getListenPort();
                 socket = new Socket(broker.getListenAddress(), broker.getListenPort());
