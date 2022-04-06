@@ -24,6 +24,11 @@ class MemberTest {
     private Member member1b;
     private Member member1c;
     private Member member1d;
+    private Broker broker1;
+    private Broker broker1a;
+    private Broker broker1b;
+    private Broker broker1c;
+    private Broker broker1d;
 
     @BeforeEach
     void setUp() {
@@ -37,34 +42,38 @@ class MemberTest {
             Config config1d = new Gson().fromJson(new FileReader("configs/broker1d.json"), Config.class);
 
             Thread t1 = new Thread(() -> {
-                Broker broker = new Broker(config1, curator.getCuratorFramework(), curator.getObjectMapper());
-                broker.start();
+                broker1 = new Broker(config1, curator.getCuratorFramework(), curator.getObjectMapper());
+                broker1.start();
             });
 
             Thread t1a = new Thread(() -> {
-                Broker broker = new Broker(config1a, curator.getCuratorFramework(), curator.getObjectMapper());
-                broker.start();
+                broker1a = new Broker(config1a, curator.getCuratorFramework(), curator.getObjectMapper());
+                broker1a.start();
             });
 
             Thread t1b = new Thread(() -> {
-                Broker broker = new Broker(config1b, curator.getCuratorFramework(), curator.getObjectMapper());
-                broker.start();
+                broker1b = new Broker(config1b, curator.getCuratorFramework(), curator.getObjectMapper());
+                broker1b.start();
             });
 
             Thread t1c = new Thread(() -> {
-                Broker broker = new Broker(config1c, curator.getCuratorFramework(), curator.getObjectMapper());
-                broker.start();
+                broker1c = new Broker(config1c, curator.getCuratorFramework(), curator.getObjectMapper());
+                broker1c.start();
             });
 
             Thread t1d = new Thread(() -> {
-                Broker broker = new Broker(config1d, curator.getCuratorFramework(), curator.getObjectMapper());
-                broker.start();
+                broker1d = new Broker(config1d, curator.getCuratorFramework(), curator.getObjectMapper());
+                broker1d.start();
             });
 
             t1.start();
+            Thread.sleep(1000);
             t1a.start();
+            Thread.sleep(1000);
             t1b.start();
+            Thread.sleep(1000);
             t1c.start();
+            Thread.sleep(1000);
             t1d.start();
 
             member1 = new Member(config1);
@@ -73,13 +82,18 @@ class MemberTest {
             member1c = new Member(config1c);
             member1d = new Member(config1d);
 
-        } catch (FileNotFoundException e) {
+        } catch (FileNotFoundException | InterruptedException e) {
             fail(e.getMessage());
         }
     }
 
     @AfterEach
     void tearDown() {
+        broker1.close();
+        broker1a.close();
+        broker1b.close();
+        broker1c.close();
+        broker1d.close();
         member1.close();
         member1a.close();
         member1b.close();
@@ -101,19 +115,19 @@ class MemberTest {
         assertEquals(leader.getPartition(), config1.getPartition());
         assertEquals(leader.getId(), config1.getId());
 
-        leader = member1a.getLeader();
+        leader = member1b.getLeader();
         assertEquals(leader.getListenAddress(), config1.getHost());
         assertEquals(leader.getListenPort(), config1.getPort());
         assertEquals(leader.getPartition(), config1.getPartition());
         assertEquals(leader.getId(), config1.getId());
 
-        leader = member1a.getLeader();
+        leader = member1c.getLeader();
         assertEquals(leader.getListenAddress(), config1.getHost());
         assertEquals(leader.getListenPort(), config1.getPort());
         assertEquals(leader.getPartition(), config1.getPartition());
         assertEquals(leader.getId(), config1.getId());
 
-        leader = member1a.getLeader();
+        leader = member1d.getLeader();
         assertEquals(leader.getListenAddress(), config1.getHost());
         assertEquals(leader.getListenPort(), config1.getPort());
         assertEquals(leader.getPartition(), config1.getPartition());
@@ -122,11 +136,6 @@ class MemberTest {
 
     @Test
     void testGetFollowers() {
-        try {
-            Thread.sleep(1000);
-        } catch (InterruptedException e) {
-            fail(e.getMessage());
-        }
         TreeMap<BrokerMetadata, Connection> followers = member1.getFollowers();
         assertEquals(followers.keySet().size(), 4);
 

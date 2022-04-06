@@ -23,13 +23,25 @@ public class Constants {
      */
     public static final int PULL_REQ = 1;
     /**
-     * subscribe request message type.
+     * membership request message type.
      */
-    public static final int SUB_REQ = 2;
+    public static final int MEM_REQ = 2;
+    /**
+     * replication request message type.
+     */
+    public static final int REP_REQ = 3;
     /**
      * pull request response message type.
      */
     public static final int REQ_RES = 4;
+    /**
+     * ack response message type.
+     */
+    public static final int ACK_RES = 5;
+    /**
+     * catch up message type.
+     */
+    public static final int CAT_FIN = 6;
     /**
      * number of messages sent to consumer per each poll.
      */
@@ -42,6 +54,10 @@ public class Constants {
      * position of the starting offset list in the list mapped to topic.
      */
     public static final int STARTING_OFFSET_INDEX = 1;
+    /**
+     * position of the list storing the number of partitions in the list mapped to topic.
+     */
+    public static final int NUM_PARTITIONS_INDEX = 2;
     /**
      * maximum segment file.
      */
@@ -65,7 +81,7 @@ public class Constants {
     /**
      * polling interval.
      */
-    public static final int INTERVAL = 100;
+    public static final int INTERVAL = 500;
     /**
      * zk base path.
      */
@@ -82,14 +98,6 @@ public class Constants {
      * thread pool.
      */
     public static final int NUM_THREADS = 10;
-    /**
-     * ack message.
-     */
-    public static final String ACK = "ack";
-    /**
-     * member request message.
-     */
-    public static final String MEM = "mem";
     /**
      * retry.
      */

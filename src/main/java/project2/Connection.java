@@ -118,4 +118,17 @@ public class Connection {
             LOGGER.info("sent message to: " + socketChannel.getRemoteAddress());
         }
     }
+
+    /**
+     * Method to close the connection.
+     */
+    public void close() {
+        try {
+            socketChannel.shutdownInput();
+            socketChannel.shutdownOutput();
+            socketChannel.close();
+        } catch (IOException e) {
+            LOGGER.error("close(): " + e.getMessage());
+        }
+    }
 }

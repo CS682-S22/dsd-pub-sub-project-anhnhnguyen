@@ -34,8 +34,8 @@ class ProducerTest {
                     assertEquals(topic, pubReq.getTopic());
                     assertEquals(key, pubReq.getKey());
                     assertArrayEquals(data, pubReq.getData());
-                    dos.writeShort(Constants.ACK.getBytes(StandardCharsets.UTF_8).length);
-                    dos.write(Constants.ACK.getBytes(StandardCharsets.UTF_8));
+                    dos.writeShort(1);
+                    dos.writeByte(Constants.ACK_RES);
                 }
                 dis.close();
                 dos.close();
@@ -72,8 +72,8 @@ class ProducerTest {
                     byte[] message = new byte[length];
                     dis.readFully(message, 0, length);
                     PubReq pubReq = new PubReq(message);
-                    dos.writeShort(Constants.ACK.getBytes(StandardCharsets.UTF_8).length);
-                    dos.write(Constants.ACK.getBytes(StandardCharsets.UTF_8));
+                    dos.writeShort(1);
+                    dos.writeByte(Constants.ACK_RES);
                     if (new String(pubReq.getData(), StandardCharsets.UTF_8).equals("FIN")) {
                         break;
                     }

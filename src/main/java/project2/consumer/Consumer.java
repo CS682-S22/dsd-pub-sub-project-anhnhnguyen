@@ -124,17 +124,16 @@ public class Consumer extends ConsumerDriver {
      *
      * @param topic            topic
      * @param startingPosition starting position
-     * @param messageType      message type (Pull request or subscribe request)
      * @return byte array in the form of [1-byte message type] | [topic] | 0 | [8-byte offset] | [2-byte partition] | [2-byte num messages]
      */
-    protected byte[] prepareRequest(String topic, long startingPosition, byte messageType, int partition, int numMessages) {
+    protected byte[] prepareRequest(String topic, long startingPosition, int partition) {
         ByteBuffer byteBuffer = ByteBuffer.allocate(topic.getBytes(StandardCharsets.UTF_8).length + 14);
-        byteBuffer.put(messageType);
+        byteBuffer.put((byte) Constants.PULL_REQ);
         byteBuffer.put(topic.getBytes(StandardCharsets.UTF_8));
         byteBuffer.put((byte) 0);
         byteBuffer.putLong(startingPosition);
         byteBuffer.putShort((short) partition);
-        byteBuffer.putShort((short) numMessages);
+        byteBuffer.putShort((short) Constants.NUM_RESPONSE);
         return byteBuffer.array();
     }
 
@@ -144,7 +143,7 @@ public class Consumer extends ConsumerDriver {
      */
     private void request() {
         try {
-            byte[] request = prepareRequest(topic, startingPosition, (byte) Constants.PULL_REQ, partition, Constants.NUM_RESPONSE);
+            byte[] request = prepareRequest(topic, startingPosition, partition);
             dos.writeShort(request.length);
             dos.write(request);
             dos.flush();
@@ -152,7 +151,7 @@ public class Consumer extends ConsumerDriver {
             getMessage();
         } catch (IOException e) {
             LOGGER.error("poll(): " + e.getMessage());
-            scheduler.shutdown();
+            close();
             Collection<BrokerMetadata> brokers = curator.findBrokers();
             BrokerMetadata broker = findBroker(brokers, partition);
             while (broker == null || broker.getListenAddress().equals(host) && broker.getListenPort() == port) {
@@ -168,6 +167,7 @@ public class Consumer extends ConsumerDriver {
                 broker = findBroker(brokers, partition);
             }
             try {
+                // TODO: this seems to create a new Consumer
                 host = broker.getListenAddress();
                 port = broker.getListenPort();
                 socket = new Socket(broker.getListenAddress(), broker.getListenPort());

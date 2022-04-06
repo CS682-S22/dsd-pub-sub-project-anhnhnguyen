@@ -13,6 +13,7 @@ import java.math.BigInteger;
 import java.net.InetSocketAddress;
 import java.nio.channels.AsynchronousSocketChannel;
 import java.nio.charset.StandardCharsets;
+import java.util.Comparator;
 import java.util.TreeMap;
 import java.util.concurrent.*;
 
@@ -29,29 +30,33 @@ public class Member {
         this.host = config.getHost();
         this.port = config.getPort();
         if (config.isLeader()) {
-            leader = new BrokerMetadata(host, port, config.getPartition(), config.getId());
+            this.leader = new BrokerMetadata(this.host, this.port, config.getPartition(), config.getId());
             LOGGER.info("leader: " + config.getId());
         }
-        this.followers = new TreeMap<>((o1, o2) -> Integer.compare(o2.getId(), o1.getId()));
+        this.followers = new TreeMap<>(Comparator.comparingInt(BrokerMetadata::getId));
         BrokerMetadata follower = new Gson().fromJson(config.getMembers(), BrokerMetadata.class);
+        AsynchronousSocketChannel socket = null;
         try {
-            AsynchronousSocketChannel socket = AsynchronousSocketChannel.open();
             boolean connected = false;
             while (!connected) {
                 try {
                     synchronized (this) {
                         wait(Constants.TIME_OUT);
                     }
+                    LOGGER.info("trying to connect with follower: " + follower.getId());
+                    socket = AsynchronousSocketChannel.open();
                     Future<Void> future = socket.connect(new InetSocketAddress(follower.getListenAddress(), follower.getListenPort()));
                     future.get();
                     connected = true;
                 } catch (ExecutionException | InterruptedException e) {
-                    // do nothing, wait till the other host connects
+                    if (socket != null) {
+                        socket.close();
+                    }
                 }
             }
             LOGGER.info("connected with follower: " + follower.getId());
             Connection connection = new Connection(socket);
-            followers.put(follower, connection);
+            this.followers.put(follower, connection);
             LOGGER.info("added follower to list");
         } catch (IOException e) {
             LOGGER.error(e.getMessage());
@@ -64,10 +69,16 @@ public class Member {
     private void exchangeInfo() {
         if (!inElection) {
             LOGGER.info("requesting membership info");
+            TreeMap<BrokerMetadata, Connection> copy = new TreeMap<>(Comparator.comparingInt(BrokerMetadata::getId));
             for (BrokerMetadata broker : followers.keySet()) {
+                copy.put(broker, followers.get(broker));
+            }
+            for (BrokerMetadata broker : copy.keySet()) {
                 try {
-                    Connection connection = followers.get(broker);
-                    connection.send(Constants.MEM.getBytes(StandardCharsets.UTF_8));
+                    Connection connection = copy.get(broker);
+                    byte[] req = new byte[1];
+                    req[0] = Constants.MEM_REQ;
+                    connection.send(req);
                     byte[] resp = connection.receive();
                     int count = 0;
                     while (resp == null && count < Constants.RETRY) {
@@ -80,17 +91,18 @@ public class Member {
                         updateMembers(resp, connection);
                     }
                 } catch (IOException | InterruptedException | ExecutionException e) {
+                    LOGGER.error("exchangeInfo(): " + e.getMessage());
                     handleFailure();
                 }
             }
         }
     }
 
-    public BrokerMetadata getLeader() {
+    public synchronized BrokerMetadata getLeader() {
         return leader;
     }
 
-    public TreeMap<BrokerMetadata, Connection> getFollowers() {
+    public synchronized TreeMap<BrokerMetadata, Connection> getFollowers() {
         return followers;
     }
 
@@ -98,42 +110,41 @@ public class Member {
 
     }
 
-    private void updateMembers(byte[] resp, Connection connection) {
+    private synchronized void updateMembers(byte[] resp, Connection connection) {
         int numBrokers = new BigInteger(resp).intValue();
         int count = 0;
         int retries = 0;
-        synchronized (this) {
-            while (count < numBrokers && retries < Constants.RETRY) {
-                try {
-                    byte[] brokerInfo = connection.receive();
-                    if (brokerInfo != null) {
-                        BrokerDecoder broker = new BrokerDecoder(brokerInfo);
-                        BrokerMetadata brokerMetadata = new BrokerMetadata(broker.getHost(), broker.getPort(), broker.getPartition(), broker.getId());
-                        if (count == 0 && !broker.getHost().equals(Constants.NONE) && leader == null) {
-                            leader = brokerMetadata;
-                            LOGGER.info("leader: " + leader.getId());
-                        }
-                        if (!followers.containsKey(brokerMetadata) && !broker.getHost().equals(Constants.NONE) && (!brokerMetadata.getListenAddress().equals(host) || brokerMetadata.getListenPort() != port)) {
-                            AsynchronousSocketChannel socket = AsynchronousSocketChannel.open();
-                            Future<Void> future = socket.connect(new InetSocketAddress(brokerMetadata.getListenAddress(), brokerMetadata.getListenPort()));
-                            future.get();
-                            LOGGER.info("connected with follower: " + brokerMetadata.getId());
-                            Connection followerConnection = new Connection(socket);
-                            followers.put(brokerMetadata, followerConnection);
-                            LOGGER.info("added follower to list");
-                        }
-                        count++;
-                        retries = 0;
-                    } else {
-                        retries++;
+        while (count < numBrokers && retries < Constants.RETRY) {
+            try {
+                byte[] brokerInfo = connection.receive();
+                if (brokerInfo != null) {
+                    BrokerDecoder broker = new BrokerDecoder(brokerInfo);
+                    BrokerMetadata brokerMetadata = new BrokerMetadata(broker.getHost(), broker.getPort(), broker.getPartition(), broker.getId());
+                    if (count == 0 && !broker.getHost().equals(Constants.NONE) && leader == null) {
+                        leader = brokerMetadata;
+                        LOGGER.info("leader: " + leader.getId());
                     }
-                } catch (IOException | InterruptedException | ExecutionException e) {
-                    handleFailure();
+                    if (!followers.containsKey(brokerMetadata) && !broker.getHost().equals(Constants.NONE) && (!brokerMetadata.getListenAddress().equals(host) || brokerMetadata.getListenPort() != port)) {
+                        AsynchronousSocketChannel socket = AsynchronousSocketChannel.open();
+                        Future<Void> future = socket.connect(new InetSocketAddress(brokerMetadata.getListenAddress(), brokerMetadata.getListenPort()));
+                        future.get();
+                        LOGGER.info("connected with follower: " + brokerMetadata.getId());
+                        Connection followerConnection = new Connection(socket);
+                        followers.put(brokerMetadata, followerConnection);
+                        LOGGER.info("added follower to list");
+                    }
+                    count++;
+                    retries = 0;
+                } else {
+                    retries++;
                 }
-            }
-            if (count != numBrokers && retries == Constants.RETRY) {
+            } catch (IOException | InterruptedException | ExecutionException e) {
+                LOGGER.error("updateMembers(): " + e.getMessage());
                 handleFailure();
             }
+        }
+        if (count != numBrokers && retries == Constants.RETRY) {
+            handleFailure();
         }
     }
 
@@ -146,6 +157,9 @@ public class Member {
             scheduler.shutdownNow();
             if (!scheduler.awaitTermination(Constants.TIME_OUT, TimeUnit.MILLISECONDS)) {
                 LOGGER.error("awaitTermination()");
+            }
+            for (Connection connection : followers.values()) {
+                connection.close();
             }
         } catch (InterruptedException e) {
             LOGGER.error(e.getMessage());

@@ -83,16 +83,13 @@ public class Producer {
         byteBuffer.putShort((short) numPartitions);
         try {
             connection.send(byteBuffer.array());
-            String ack = "";
+            byte[] ack = connection.receive();
             int count = 0;
-            while (!ack.equals(Constants.ACK) && count < Constants.RETRY) {
-                byte[] message = connection.receive();
-                if (message != null) {
-                    ack = new String(message, StandardCharsets.UTF_8);
-                }
+            while ((ack == null || ack[0] != Constants.ACK_RES) && count < Constants.RETRY) {
+                ack = connection.receive();
                 count++;
             }
-            if (!ack.equals(Constants.ACK)) {
+            if (ack == null || ack[0] != Constants.ACK_RES) {
                 LOGGER.info("suspect broker failure");
                 return false;
             }
