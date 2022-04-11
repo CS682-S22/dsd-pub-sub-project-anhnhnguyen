@@ -24,7 +24,7 @@ public class ProducerDriver {
     /**
      * logger object.
      */
-    private static final Logger LOGGER = LoggerFactory.getLogger(ProducerDriver.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger("operation");
 
     /**
      * map between partition number and producer that connects with the appropriate broker.

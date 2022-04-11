@@ -24,7 +24,7 @@ public class Consumer extends ConsumerDriver {
     /**
      * logger object.
      */
-    private final Logger LOGGER = LoggerFactory.getLogger(Consumer.class);
+    private final Logger LOGGER = LoggerFactory.getLogger("operation");
     /**
      * topic.
      */

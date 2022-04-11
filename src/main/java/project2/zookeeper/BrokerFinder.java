@@ -24,7 +24,7 @@ public class BrokerFinder {
     /**
      * logger object.
      */
-    private final Logger LOGGER = LoggerFactory.getLogger(BrokerFinder.class);
+    private final Logger LOGGER = LoggerFactory.getLogger("operation");
     /**
      * service discovery.
      */

@@ -14,7 +14,7 @@ public class Utils {
     /**
      * logger object.
      */
-    private static final Logger LOGGER = LoggerFactory.getLogger(Utils.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger("operation");
 
     /**
      * method to validate program arguments.

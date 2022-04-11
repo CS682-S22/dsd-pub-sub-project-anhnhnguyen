@@ -20,7 +20,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 
 public class Member {
-    private final Logger LOGGER = LoggerFactory.getLogger(Member.class);
+    private final Logger LOGGER = LoggerFactory.getLogger("membership");
     private BrokerMetadata leader;
     private final TreeMap<BrokerMetadata, Connection> followers;
     private final Timer timer;

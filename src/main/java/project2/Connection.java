@@ -25,7 +25,7 @@ public class Connection {
     /**
      * the logger object.
      */
-    private final Logger LOGGER = LoggerFactory.getLogger(Connection.class);
+    private final Logger LOGGER = LoggerFactory.getLogger("network");
     /**
      * the socket channel.
      */

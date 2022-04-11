@@ -21,7 +21,7 @@ public class BrokerDriver {
     /**
      * logger object.
      */
-    private static final Logger LOGGER = LoggerFactory.getLogger(BrokerDriver.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger("operation");
 
     /**
      * main broker program to listen for incoming request until user asks broker to exit.

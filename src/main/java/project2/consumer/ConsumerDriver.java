@@ -23,7 +23,7 @@ public class ConsumerDriver {
     /**
      * logger object.
      */
-    private static final Logger LOGGER = LoggerFactory.getLogger(ConsumerDriver.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger("operation");
     /**
      * state of the driver.
      */

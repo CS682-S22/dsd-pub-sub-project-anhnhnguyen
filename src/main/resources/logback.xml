@@ -4,22 +4,53 @@
     <appender name="stdout" class="ch.qos.logback.core.ConsoleAppender">
         <layout class="ch.qos.logback.classic.PatternLayout">
             # Pattern of log message for console appender
-            <Pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</Pattern>
+            <Pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} %class{0}.%method:%L - %msg%n</Pattern>
         </layout>
     </appender>
 
     # File appender
-    <appender name="fout" class="ch.qos.logback.core.FileAppender">
-        <file>app.log</file>
+    <appender name="operation-file" class="ch.qos.logback.core.FileAppender">
+        <file>operation.log</file>
         <append>false</append>
         <encoder>
             # Pattern of log message for file appender
-            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} %class{0}.%method:%L - %msg%n</pattern>
+        </encoder>
+    </appender>
+    <appender name="membership-file" class="ch.qos.logback.core.FileAppender">
+        <file>membership.log</file>
+        <append>false</append>
+        <encoder>
+            # Pattern of log message for file appender
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} %class{0}.%method:%L - %msg%n</pattern>
+        </encoder>
+    </appender>
+    <appender name="network-file" class="ch.qos.logback.core.FileAppender">
+        <file>network.log</file>
+        <append>false</append>
+        <encoder>
+            # Pattern of log message for file appender
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} %class{0}.%method:%L - %msg%n</pattern>
         </encoder>
     </appender>
 
+    <logger name="operation" level="INFO" additivity="false">
+        <appender-ref ref="operation-file"/>
+        <appender-ref ref="stdout" />
+    </logger>
+    <logger name="membership" level="INFO" additivity="false">
+        <appender-ref ref="membership-file"/>
+        <appender-ref ref="stdout" />
+    </logger>
+    <logger name="network" level="INFO" additivity="false">
+        <appender-ref ref="network-file"/>
+        <appender-ref ref="stdout" />
+    </logger>
+
     <root level="INFO">
         <appender-ref ref="stdout" />
-        <appender-ref ref="fout" />
+        <appender-ref ref="operation-file" />
+        <appender-ref ref="membership-file" />
+        <appender-ref ref="network-file" />
     </root>
 </configuration>

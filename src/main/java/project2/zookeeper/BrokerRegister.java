@@ -21,7 +21,7 @@ public class BrokerRegister {
     /**
      * logger object.
      */
-    private final Logger LOGGER = LoggerFactory.getLogger(BrokerRegister.class);
+    private final Logger LOGGER = LoggerFactory.getLogger("operation");
     /**
      * curator framework.
      */

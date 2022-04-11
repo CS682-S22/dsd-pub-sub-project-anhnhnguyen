@@ -42,7 +42,7 @@ public class Broker {
     /**
      * logger object.
      */
-    private final Logger LOGGER = LoggerFactory.getLogger(Broker.class);
+    private final Logger LOGGER = LoggerFactory.getLogger("operation");
     /**
      * server.
      */

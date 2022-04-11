@@ -27,7 +27,7 @@ public class Topic {
      */
     private final Map<String, Map<Integer, List<byte[]>>> tmp;
 
-    private final Logger LOGGER = LoggerFactory.getLogger(Topic.class);
+    private final Logger LOGGER = LoggerFactory.getLogger("operation");
 
     public Topic() {
         this.topics = new HashMap<>();

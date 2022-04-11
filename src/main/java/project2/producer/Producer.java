@@ -22,7 +22,7 @@ public class Producer {
     /**
      * logger object.
      */
-    private final Logger LOGGER = LoggerFactory.getLogger(Producer.class);
+    private final Logger LOGGER = LoggerFactory.getLogger("operation");
     /**
      * socket.
      */
