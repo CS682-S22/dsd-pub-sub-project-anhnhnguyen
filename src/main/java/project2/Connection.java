@@ -131,4 +131,20 @@ public class Connection {
             LOGGER.error("close(): " + e.getMessage());
         }
     }
+
+    /**
+     * Method to wait for acknowledgement.
+     */
+    public void waitForAck() {
+        try {
+            byte[] ack = receive();
+            int count = 0;
+            while ((ack == null || ack[0] != Constants.ACK_RES) && count < Constants.RETRY) {
+                ack = receive();
+                count++;
+            }
+        } catch (IOException | InterruptedException | ExecutionException e) {
+            LOGGER.error("processPubReq(): " + e.getMessage());
+        }
+    }
 }

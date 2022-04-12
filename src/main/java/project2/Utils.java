@@ -4,6 +4,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Class that has common methods to be used by multiple classes.
@@ -81,4 +83,40 @@ public class Utils {
             LOGGER.error("createFolder(): " + name);
         }
     }
+
+    /**
+     * Method to prepare the byte buffer in the form of 1-byte message type | 8-byte offset | byte data
+     *
+     * @param messageType message type
+     * @param offset      offset
+     * @param data        data
+     * @return byte buffer
+     */
+    public static ByteBuffer prepareData(int messageType, long offset, byte[] data) {
+        ByteBuffer byteBuffer = ByteBuffer.allocate(data.length + 9);
+        byteBuffer.put((byte) messageType);
+        byteBuffer.putLong(offset);
+        byteBuffer.put(data);
+        return byteBuffer;
+    }
+
+    /**
+     * Method to prepare the publish request in the form of 1-byte message type | topic | 0 | data | 0 | 2-byte number of partitions.
+     *
+     * @param data          data byte
+     * @param topic         topic
+     * @param numPartitions number of partitions
+     * @return byte buffer
+     */
+    public static ByteBuffer preparePubReq(byte[] data, String topic, short numPartitions) {
+        ByteBuffer response = ByteBuffer.allocate(data.length + 5 + topic.getBytes(StandardCharsets.UTF_8).length);
+        response.put((byte) Constants.PUB_REQ);
+        response.put(topic.getBytes(StandardCharsets.UTF_8));
+        response.put((byte) 0);
+        response.put(data);
+        response.put((byte) 0);
+        response.putShort(numPartitions);
+        return response;
+    }
+
 }

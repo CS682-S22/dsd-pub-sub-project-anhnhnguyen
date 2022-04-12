@@ -20,7 +20,6 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.math.BigInteger;
 import java.net.InetSocketAddress;
-import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousServerSocketChannel;
 import java.nio.channels.AsynchronousSocketChannel;
 import java.nio.channels.CompletionHandler;
@@ -32,10 +31,11 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
-import java.util.concurrent.locks.Lock;
 
 /**
  * Class that listens to request to publish message from Producer and request to pull message from Consumer.
+ * If the broker is a leader, then replicate messages to followers before acknowledging messages to the Producer.
+ * If the broker is a follower, then catching up with the leader then periodically polls from queue to persistent log.
  *
  * @author anhnguyen
  */
@@ -88,10 +88,6 @@ public class Broker {
      * count of pub req from leader.
      */
     private int pubCount;
-    /**
-     * lock map for connection.
-     */
-    private final Map<Connection, Lock> connectionLockMap;
 
     /**
      * Start the broker to listen on the given host name and port number. Also delete old log files
@@ -110,13 +106,13 @@ public class Broker {
         this.repQueue = new ConcurrentLinkedQueue<>();
         this.isCatchingUp = true;
         this.pubCount = 0;
-        this.connectionLockMap = new ConcurrentHashMap<>();
         try {
             this.server = AsynchronousServerSocketChannel.open().bind(new InetSocketAddress(config.getHost(), config.getPort()));
             LOGGER.info("broker started on: " + server.getLocalAddress());
         } catch (IOException e) {
             LOGGER.error("can't start broker on: " + config.getHost() + ":" + config.getPort() + " " + e.getMessage());
         }
+
         if (this.isLeader) {
             this.brokerRegister = new BrokerRegister(curatorFramework,
                     new InstanceSerializerFactory(objectMapper.reader(), objectMapper.writer()),
@@ -124,6 +120,7 @@ public class Broker {
             this.brokerRegister.registerAvailability();
             LOGGER.info("registering with Zookeeper");
         }
+
         this.timer.schedule(new TimerTask() {
             @Override
             public void run() {
@@ -131,46 +128,62 @@ public class Broker {
                 LOGGER.info("set up members table");
             }
         }, 0);
+
         Utils.deleteFiles(new File(Constants.LOG_FOLDER));
         Utils.createFolder(Constants.LOG_FOLDER);
+
         if (!this.isLeader) {
             this.timer.schedule(new TimerTask() {
                 @Override
                 public void run() {
-                    if (pubCount == 0) {
-                        isCatchingUp = false;
-                        LOGGER.info("No need to catch up");
-                    }
+                    removeCatchingUpStatus();
                 }
             }, Constants.TIME_OUT * 120);
 
-            TimerTask task = new TimerTask() {
+            this.timer.schedule(new TimerTask() {
                 @Override
                 public void run() {
-                    LOGGER.info("try polling");
-                    if (!isCatchingUp) {
-                        while (!repQueue.isEmpty()) {
-                            byte[] req = repQueue.poll();
-                            LOGGER.info("polling off replication queue");
-                            byte[] offsetBytes = Utils.extractBytes(1, 9, req, false);
-                            long offset = new BigInteger(offsetBytes).longValue();
-                            byte[] data = new byte[req.length - 9];
-                            System.arraycopy(req, 9, data, 0, data.length);
-                            PubReq pubReq = new PubReq(data);
-                            String topic = pubReq.getTopic();
-                            int partition = pubReq.getKey().hashCode() % pubReq.getNumPartitions();
-                            List<Long> offsetList = new ArrayList<>();
-                            if (topicStruct.getTopics().containsKey(topic) && topicStruct.getTopics().get(topic).containsKey(partition)) {
-                                offsetList = topicStruct.getTopics().get(topic).get(partition).get(Constants.OFFSET_INDEX);
-                            }
-                            if (offsetList.size() == 0 || offsetList.get(offsetList.size() - 1) == offset) {
-                                topicStruct.updateTopic(pubReq);
-                            }
-                        }
-                    }
+                    poll();
                 }
-            };
-            this.timer.schedule(task, 0, Constants.INTERVAL);
+            }, 0, Constants.INTERVAL);
+        }
+    }
+
+    /**
+     * Method to cancel the catching up status if there's no need to catch up.
+     */
+    private void removeCatchingUpStatus() {
+        if (pubCount == 0) {
+            isCatchingUp = false;
+            LOGGER.info("No need to catch up");
+        }
+    }
+
+    /**
+     * Method to poll request from the queue and update the topic struct accordingly.
+     */
+    private void poll() {
+        LOGGER.info("try polling");
+        if (!isCatchingUp) {
+            while (!repQueue.isEmpty()) {
+                byte[] req = repQueue.poll();
+                LOGGER.info("polling off replication queue");
+                byte[] offsetBytes = Utils.extractBytes(1, 9, req, false);
+                long offset = new BigInteger(offsetBytes).longValue();
+                byte[] data = new byte[req.length - 9];
+                System.arraycopy(req, 9, data, 0, data.length);
+                PubReq pubReq = new PubReq(data);
+                String topic = pubReq.getTopic();
+                int partition = pubReq.getKey().hashCode() % pubReq.getNumPartitions();
+                List<Long> offsetList = new ArrayList<>();
+                if (topicStruct.getTopics().containsKey(topic) && topicStruct.getTopics().get(topic).containsKey(partition)) {
+                    offsetList = topicStruct.getTopics().get(topic).get(partition).get(Constants.OFFSET_INDEX);
+                }
+                // only update the topic struct if the offset is expected, in case of duplicate
+                if (offsetList.size() == 0 || offsetList.get(offsetList.size() - 1) == offset) {
+                    topicStruct.updateTopic(pubReq);
+                }
+            }
         }
     }
 
@@ -270,29 +283,19 @@ public class Broker {
                     current = indexes.get(Constants.OFFSET_INDEX).get(indexes.get(Constants.OFFSET_INDEX).size() - 1);
                 }
                 for (Connection followerConnection : followers.values()) {
-                    ByteBuffer repReq = ByteBuffer.allocate(request.length + 9);
-                    repReq.put((byte) Constants.REP_REQ);
-                    repReq.putLong(current);
-                    repReq.put(request);
                     LOGGER.info("Sending replication request");
-                    followerConnection.send(repReq.array());
-                    byte[] ack = followerConnection.receive();
-                    int count = 0;
-                    while ((ack == null || ack[0] != Constants.ACK_RES) && count < Constants.RETRY) {
-                        ack = followerConnection.receive();
-                        count++;
-                    }
+                    followerConnection.send(Utils.prepareData(Constants.REP_REQ, current, request).array());
+                    followerConnection.waitForAck();
                 }
             } catch (IOException | InterruptedException | ExecutionException e) {
                 LOGGER.error("processPubReq(): " + e.getMessage());
             }
         }
+
         topicStruct.updateTopic(pubReq);
         try {
             LOGGER.info("sending ack to publish request");
-            byte[] ack = new byte[1];
-            ack[0] = Constants.ACK_RES;
-            connection.send(ack);
+            connection.send(new byte[]{(byte) Constants.ACK_RES});
         } catch (IOException | InterruptedException | ExecutionException e) {
             LOGGER.error("processPubReq(): " + e.getMessage());
         }
@@ -330,35 +333,19 @@ public class Broker {
                 if (index >= 0) {
                     int count = 0;
                     int numMessages = pullReq.getNumMessages();
-                    if (numMessages == 0) {
-                        numMessages = Integer.MAX_VALUE; // send during push (for first subscription)
-                    }
-
                     while (index < offSetList.size() - 1 && count < numMessages) {
-                        long offset = offSetList.get(index);
-                        // search for the file that has the offset, binarySearch method include insertionPoint which is
-                        // the index where the number would be put in if it doesn't find the number. So for this application
-                        // return the lower index because that's where the byte offset would be.
-                        int fileIndex = Arrays.binarySearch(startingOffsetList.toArray(), offset);
-                        if (fileIndex < 0) {
-                            fileIndex = -(fileIndex + 1) - 1;
-                        }
-                        String fileName = Constants.LOG_FOLDER + topic + Constants.PATH_STRING + pullReq.getPartition() +
-                                Constants.PATH_STRING + startingOffsetList.get(fileIndex) + Constants.FILE_TYPE;
-                        // only expose to consumer when data is flushed to disk, so need to check the log/ folder
-                        if (Files.exists(Paths.get(fileName))) {
-                            try (RandomAccessFile raf = new RandomAccessFile(fileName, "r")) {
-                                long length = offSetList.get(index + 1) - offSetList.get(index);
-                                long position = offSetList.get(index) - startingOffsetList.get(fileIndex);
-                                sendData(connection, length, offset, position, topic, raf, pullReq.getPartition());
-                                index++;
-                                count++;
-                            } catch (IOException e) {
-                                LOGGER.error("processPullReq(): " + e.getMessage());
-                            }
-                        } else {
+                        byte[] data = findData(offSetList, startingOffsetList, index, pullReq.getTopic(), pullReq.getPartition());
+                        if (data == null) {
                             break;
                         }
+                        try {
+                            connection.send(Utils.prepareData(Constants.REQ_RES, offSetList.get(index), data).array());
+                        } catch (IOException | InterruptedException | ExecutionException e) {
+                            LOGGER.error("processPullReq(): " + e.getMessage());
+                        }
+                        LOGGER.info("data at offset: " + offSetList.get(index) + " from topic: " + topic + ", partition: " + pullReq.getPartition() + " sent");
+                        index++;
+                        count++;
                     }
                 }
             }
@@ -366,28 +353,40 @@ public class Broker {
     }
 
     /**
-     * Method to send data to consumer via connection by looking up the position of data in file and read data length.
+     * Method to find data from persistent log.
      *
-     * @param connection connection
-     * @param length     length of message
-     * @param position   position
-     * @param offset     offset of message
-     * @param partition  partition
+     * @param offSetList         offset list
+     * @param startingOffsetList starting offset list
+     * @param index              index
+     * @param topic              topic
+     * @param partition          partition
+     * @return byte[]
      */
-    private void sendData(Connection connection, long length, long offset, long position, String topic, RandomAccessFile raf, int partition) {
-        try {
-            byte[] data = new byte[(int) length];
-            raf.seek(position);
-            raf.read(data);
-            ByteBuffer response = ByteBuffer.allocate((int) length + 9);
-            response.put((byte) Constants.REQ_RES);
-            response.putLong(offset);
-            response.put(data);
-            connection.send(response.array());
-            LOGGER.info("data at offset: " + offset + " from topic: " + topic + ", partition: " + partition + " sent");
-        } catch (IOException | InterruptedException | ExecutionException e) {
-            LOGGER.error("sendData(): " + e.getMessage());
+    private byte[] findData(List<Long> offSetList, List<Long> startingOffsetList, int index, String topic, int partition) {
+        long offset = offSetList.get(index);
+        // search for the file that has the offset, binarySearch method include insertionPoint which is
+        // the index where the number would be put in if it doesn't find the number. So for this application
+        // return the lower index because that's where the byte offset would be.
+        int fileIndex = Arrays.binarySearch(startingOffsetList.toArray(), offset);
+        if (fileIndex < 0) {
+            fileIndex = -(fileIndex + 1) - 1;
         }
+        String fileName = Constants.LOG_FOLDER + topic + Constants.PATH_STRING + partition +
+                Constants.PATH_STRING + startingOffsetList.get(fileIndex) + Constants.FILE_TYPE;
+        // only expose to consumer when data is flushed to disk, so need to check the log/ folder
+        if (Files.exists(Paths.get(fileName))) {
+            try (RandomAccessFile raf = new RandomAccessFile(fileName, "r")) {
+                long length = offSetList.get(index + 1) - offSetList.get(index);
+                long position = offSetList.get(index) - startingOffsetList.get(fileIndex);
+                byte[] data = new byte[(int) length];
+                raf.seek(position);
+                raf.read(data);
+                return data;
+            } catch (IOException e) {
+                LOGGER.error("processPullReq(): " + e.getMessage());
+            }
+        }
+        return null;
     }
 
     /**
@@ -431,13 +430,13 @@ public class Broker {
             Map<BrokerMetadata, Connection> followers = members.getFollowers();
             Membership.Broker leaderBroker;
             if (leader == null) {
-                leaderBroker = getBrokerInfo(leader, true);
+                leaderBroker = getBrokerInfo(null);
             } else {
-                leaderBroker = getBrokerInfo(leader, false);
+                leaderBroker = getBrokerInfo(leader);
             }
             brokers.add(leaderBroker);
             for (BrokerMetadata follower : followers.keySet()) {
-                Membership.Broker followingBroker = getBrokerInfo(follower, false);
+                Membership.Broker followingBroker = getBrokerInfo(follower);
                 brokers.add(followingBroker);
             }
             Membership.MemberTable memberTable = Membership.MemberTable.newBuilder()
@@ -453,12 +452,11 @@ public class Broker {
      * Method to wrap the broker metadata around the Broker protobuf.
      *
      * @param broker broker metadata
-     * @param isNull if broker is null
      * @return Broker protobuf
      */
-    private Membership.Broker getBrokerInfo(BrokerMetadata broker, boolean isNull) {
+    private Membership.Broker getBrokerInfo(BrokerMetadata broker) {
         Membership.Broker brokerProto;
-        if (isNull) {
+        if (broker == null) {
             brokerProto = Membership.Broker.newBuilder()
                     .setAddress(Constants.NONE)
                     .setPort(0).setPartition(0)
@@ -485,9 +483,7 @@ public class Broker {
         try {
             repQueue.add(request);
             LOGGER.info("sending ack to replicate request");
-            byte[] ack = new byte[1];
-            ack[0] = Constants.ACK_RES;
-            connection.send(ack);
+            connection.send(new byte[]{(byte) Constants.ACK_RES});
         } catch (IOException | InterruptedException | ExecutionException e) {
             LOGGER.error("processRepReq(): " + e.getMessage());
         }
@@ -522,6 +518,7 @@ public class Broker {
                 if (!followerList.containsKey(follower)) {
                     followers.get(follower).close();
                     followers.remove(follower);
+                    LOGGER.info("removed from follower list: " + follower.getId());
                 }
             }
         } catch (IOException | InterruptedException | ExecutionException e) {
@@ -530,7 +527,7 @@ public class Broker {
     }
 
     /**
-     * Method to send snapshot of the database to followers.
+     * Method to send snapshot of the database to followers in a separate thread and connection.
      *
      * @param follower follower
      * @param copy     copy of topic
@@ -541,7 +538,7 @@ public class Broker {
             Future<Void> future = socket.connect(new InetSocketAddress(follower.getListenAddress(), follower.getListenPort()));
             future.get();
             Connection connection = new Connection(socket);
-            LOGGER.info("sending snapshot");
+            LOGGER.info("sending snapshot to: " + follower.getId());
             Map<String, Map<Integer, List<List<Long>>>> topics = copy.getTopics();
             Map<String, Map<Integer, List<byte[]>>> tmp = copy.getTmp();
             for (String topic : topics.keySet()) {
@@ -550,68 +547,23 @@ public class Broker {
                     List<Long> startingOffsetList = topics.get(topic).get(partition).get(Constants.STARTING_OFFSET_INDEX);
                     List<Long> numPartitionsList = topics.get(topic).get(partition).get(Constants.NUM_PARTITIONS_INDEX);
                     for (int i = 0; i < offSetList.size() - 1 - tmp.get(topic).get(partition).size(); i++) {
-                        long offset = offSetList.get(i);
-                        int fileIndex = Arrays.binarySearch(startingOffsetList.toArray(), offset);
-                        if (fileIndex < 0) {
-                            fileIndex = -(fileIndex + 1) - 1;
-                        }
-                        String fileName = Constants.LOG_FOLDER + topic + Constants.PATH_STRING + partition +
-                                Constants.PATH_STRING + startingOffsetList.get(fileIndex) + Constants.FILE_TYPE;
-                        if (Files.exists(Paths.get(fileName))) {
-                            try (RandomAccessFile raf = new RandomAccessFile(fileName, "r")) {
-                                long length = offSetList.get(i + 1) - offSetList.get(i);
-                                long position = offSetList.get(i) - startingOffsetList.get(fileIndex);
-                                byte[] data = new byte[(int) length];
-                                raf.seek(position);
-                                raf.read(data);
-                                ByteBuffer response = ByteBuffer.allocate((int) length + 5 + topic.getBytes(StandardCharsets.UTF_8).length);
-                                response.put((byte) Constants.PUB_REQ);
-                                response.put(topic.getBytes(StandardCharsets.UTF_8));
-                                response.put((byte) 0);
-                                response.put(data);
-                                response.put((byte) 0);
-                                response.putShort((short) ((long) numPartitionsList.get(0)));
-                                connection.send(response.array());
-                                byte[] ack = connection.receive();
-                                int count = 0;
-                                while ((ack == null || ack[0] != Constants.ACK_RES) && count < Constants.RETRY) {
-                                    ack = connection.receive();
-                                    count++;
-                                }
-                            }
-                        } else {
+                        byte[] data = findData(offSetList, startingOffsetList, i, topic, partition);
+                        if (data == null) {
                             break;
                         }
+                        connection.send(Utils.preparePubReq(data, topic, (short) ((long) numPartitionsList.get(0))).array());
+                        connection.waitForAck();
                     }
                     for (int i = 0; i < tmp.get(topic).get(partition).size(); i++) {
                         byte[] data = tmp.get(topic).get(partition).get(i);
-                        ByteBuffer response = ByteBuffer.allocate(data.length + 5 + topic.getBytes(StandardCharsets.UTF_8).length);
-                        response.put((byte) Constants.PUB_REQ);
-                        response.put(topic.getBytes(StandardCharsets.UTF_8));
-                        response.put((byte) 0);
-                        response.put(data);
-                        response.put((byte) 0);
-                        response.putShort((short) ((long) numPartitionsList.get(0)));
-                        connection.send(response.array());
-                        byte[] ack = connection.receive();
-                        int count = 0;
-                        while ((ack == null || ack[0] != Constants.ACK_RES) && count < Constants.RETRY) {
-                            ack = connection.receive();
-                            count++;
-                        }
+                        connection.send(Utils.preparePubReq(data, topic, (short) ((long) numPartitionsList.get(0))).array());
+                        connection.waitForAck();
                     }
                 }
             }
-            byte[] fin = new byte[1];
-            fin[0] = Constants.CAT_FIN;
             LOGGER.info("finished sending snapshot");
-            connection.send(fin);
-            byte[] ack = connection.receive();
-            int count = 0;
-            while ((ack == null || ack[0] != Constants.ACK_RES) && count < Constants.RETRY) {
-                ack = connection.receive();
-                count++;
-            }
+            connection.send(new byte[]{(byte) Constants.CAT_FIN});
+            connection.waitForAck();
             connection.close();
         } catch (IOException | InterruptedException | ExecutionException e) {
             LOGGER.error("sendSnapshot(): " + e.getMessage());
@@ -619,15 +571,15 @@ public class Broker {
     }
 
     /**
-     * @param connection
+     * Method to process message signaling end of catching up.
+     *
+     * @param connection connection
      */
     private void processCatFin(Connection connection) {
         try {
             LOGGER.info("done catching up");
             isCatchingUp = false;
-            byte[] ack = new byte[1];
-            ack[0] = Constants.ACK_RES;
-            connection.send(ack);
+            connection.send(new byte[]{(byte) Constants.ACK_RES});
         } catch (IOException | ExecutionException | InterruptedException e) {
             LOGGER.error("processCatFin: " + e.getMessage());
         }
