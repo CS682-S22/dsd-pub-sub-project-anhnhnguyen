@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+//from root directory compile this as follows:
+//protoc --java_out=src/main/java protos/memberShip.proto
+
+option java_package = "project2.broker.protos";
+option java_outer_classname = "Membership";
+
+message Broker {
+    string address = 1;
+    int32 port = 2;
+    int32 partition = 3;
+    int32 id = 4;
+}
+
+message MemberTable {
+    int32 size = 1;
+    repeated Broker brokers = 2;
+}

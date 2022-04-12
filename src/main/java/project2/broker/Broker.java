@@ -8,6 +8,7 @@ import project2.Config;
 import project2.Connection;
 import project2.Constants;
 import project2.Utils;
+import project2.broker.protos.Membership;
 import project2.consumer.PullReq;
 import project2.producer.PubReq;
 import project2.zookeeper.BrokerMetadata;
@@ -418,49 +419,61 @@ public class Broker {
      */
     private void sendMembers(Connection connection) {
         try {
+            List<Membership.Broker> brokers = new ArrayList<>();
             LOGGER.info("sending members info");
             if (members == null) {
-                ByteBuffer resp = ByteBuffer.allocate(2);
-                resp.putShort((short) (0));
-                connection.send(resp.array());
+                Membership.MemberTable memberTable = Membership.MemberTable.newBuilder()
+                        .setSize(-1)
+                        .addAllBrokers(brokers).build();
+                connection.send(memberTable.toByteArray());
                 return;
             }
             BrokerMetadata leader = members.getLeader();
             Map<BrokerMetadata, Connection> followers = members.getFollowers();
-            ByteBuffer resp = ByteBuffer.allocate(2);
-            resp.putShort((short) (followers.keySet().size() + 1));
-            connection.send(resp.array());
+            Membership.Broker leaderBroker;
             if (leader == null) {
-                resp = ByteBuffer.allocate(Constants.NONE.getBytes(StandardCharsets.UTF_8).length + 6);
-                resp.putShort((short) 0);
-                resp.putShort((short) 0);
-                resp.putShort((short) 0);
-                resp.put(Constants.NONE.getBytes(StandardCharsets.UTF_8));
-                connection.send(resp.array());
+                leaderBroker = getBrokerInfo(leader, true);
             } else {
-                connection.send(getBrokerInfo(leader));
+                leaderBroker = getBrokerInfo(leader, false);
             }
+            brokers.add(leaderBroker);
             for (BrokerMetadata follower : followers.keySet()) {
-                connection.send(getBrokerInfo(follower));
+                Membership.Broker followingBroker = getBrokerInfo(follower, false);
+                brokers.add(followingBroker);
             }
+            Membership.MemberTable memberTable = Membership.MemberTable.newBuilder()
+                    .setSize(followers.size() + 1)
+                    .addAllBrokers(brokers).build();
+            connection.send(memberTable.toByteArray());
         } catch (IOException | ExecutionException | InterruptedException e) {
             LOGGER.error("sendMembers(): " + e.getMessage());
         }
     }
 
     /**
-     * Method to get the byte array of the broker metadata.
+     * Method to wrap the broker metadata around the Broker protobuf.
      *
      * @param broker broker metadata
-     * @return byte array
+     * @param isNull if broker is null
+     * @return Broker protobuf
      */
-    private byte[] getBrokerInfo(BrokerMetadata broker) {
-        ByteBuffer resp = ByteBuffer.allocate(broker.getListenAddress().getBytes(StandardCharsets.UTF_8).length + 6);
-        resp.putShort((short) broker.getListenPort());
-        resp.putShort((short) broker.getPartition());
-        resp.putShort((short) broker.getId());
-        resp.put(broker.getListenAddress().getBytes(StandardCharsets.UTF_8));
-        return resp.array();
+    private Membership.Broker getBrokerInfo(BrokerMetadata broker, boolean isNull) {
+        Membership.Broker brokerProto;
+        if (isNull) {
+            brokerProto = Membership.Broker.newBuilder()
+                    .setAddress(Constants.NONE)
+                    .setPort(0).setPartition(0)
+                    .setPartition(0)
+                    .build();
+        } else {
+            brokerProto = Membership.Broker.newBuilder()
+                    .setAddress(broker.getListenAddress())
+                    .setPort(broker.getListenPort())
+                    .setPartition(broker.getPartition())
+                    .setId(broker.getId())
+                    .build();
+        }
+        return brokerProto;
     }
 
     /**
