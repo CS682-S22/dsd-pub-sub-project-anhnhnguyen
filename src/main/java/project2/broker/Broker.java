@@ -157,16 +157,15 @@ public class Broker {
                             byte[] data = new byte[req.length - 9];
                             System.arraycopy(req, 9, data, 0, data.length);
                             PubReq pubReq = new PubReq(data);
-//                            String topic = pubReq.getTopic();
-//                            int partition = pubReq.getKey().hashCode() % pubReq.getNumPartitions();
-//                            List<Long> offsetList = new ArrayList<>();
-//                            if (topicStruct.getTopics().containsKey(topic) && topicStruct.getTopics().get(topic).containsKey(partition)) {
-//                                offsetList = topicStruct.getTopics().get(topic).get(partition).get(Constants.OFFSET_INDEX);
-//                            }
-//                            if (offsetList.size() == 0 || offsetList.get(offsetList.size() - 1) == offset) {
-//                                topicStruct.updateTopic(pubReq);
-//                            }
-                            topicStruct.updateTopic(pubReq);
+                            String topic = pubReq.getTopic();
+                            int partition = pubReq.getKey().hashCode() % pubReq.getNumPartitions();
+                            List<Long> offsetList = new ArrayList<>();
+                            if (topicStruct.getTopics().containsKey(topic) && topicStruct.getTopics().get(topic).containsKey(partition)) {
+                                offsetList = topicStruct.getTopics().get(topic).get(partition).get(Constants.OFFSET_INDEX);
+                            }
+                            if (offsetList.size() == 0 || offsetList.get(offsetList.size() - 1) == offset) {
+                                topicStruct.updateTopic(pubReq);
+                            }
                         }
                     }
                 }
@@ -510,13 +509,13 @@ public class Broker {
                     future.get();
                     Connection followerConnection = new Connection(socket);
                     followers.put(follower, followerConnection);
+                    Topic copy = new Topic(topicStruct);
                     timer.schedule(new TimerTask() {
                         @Override
                         public void run() {
-                            sendSnapshot(follower);
+                            sendSnapshot(follower, copy);
                         }
                     }, 0);
-                    Thread.sleep(Constants.TIME_OUT * 4);
                 }
             }
             for (BrokerMetadata follower : followers.keySet()) {
@@ -534,15 +533,15 @@ public class Broker {
      * Method to send snapshot of the database to followers.
      *
      * @param follower follower
+     * @param copy     copy of topic
      */
-    private void sendSnapshot(BrokerMetadata follower) {
+    private void sendSnapshot(BrokerMetadata follower, Topic copy) {
         try {
             AsynchronousSocketChannel socket = AsynchronousSocketChannel.open();
             Future<Void> future = socket.connect(new InetSocketAddress(follower.getListenAddress(), follower.getListenPort()));
             future.get();
             Connection connection = new Connection(socket);
             LOGGER.info("sending snapshot");
-            Topic copy = new Topic(topicStruct);
             Map<String, Map<Integer, List<List<Long>>>> topics = copy.getTopics();
             Map<String, Map<Integer, List<byte[]>>> tmp = copy.getTmp();
             for (String topic : topics.keySet()) {
