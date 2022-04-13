@@ -172,7 +172,7 @@ public class Member {
             startElection();
         }
         followers.remove(broker);
-        LOGGER.info("removed failed broker");
+        LOGGER.info("removed failed broker: " + broker.getId());
     }
 
     /**
@@ -193,7 +193,8 @@ public class Member {
                     leader = brokerMetadata;
                     LOGGER.info("leader: " + leader.getId());
                 }
-                if (!followers.containsKey(brokerMetadata) && !broker.getAddress().equals(Constants.NONE) && (!brokerMetadata.getListenAddress().equals(host) || brokerMetadata.getListenPort() != port)) {
+                if (!followers.containsKey(brokerMetadata) && !broker.getAddress().equals(Constants.NONE)
+                        && (!brokerMetadata.getListenAddress().equals(host) || brokerMetadata.getListenPort() != port)) {
                     AsynchronousSocketChannel socket = AsynchronousSocketChannel.open();
                     Future<Void> future = socket.connect(new InetSocketAddress(brokerMetadata.getListenAddress(), brokerMetadata.getListenPort()));
                     future.get();
@@ -204,14 +205,14 @@ public class Member {
                 }
             }
         } catch (IOException | ExecutionException | InterruptedException e) {
-            LOGGER.error("updateMembers(): " + e.getMessage());
+            // do nothing
         }
     }
 
     /**
      * Method to elect a new leader.
      */
-    private void startElection() {
+    private synchronized void startElection() {
 
     }
 
