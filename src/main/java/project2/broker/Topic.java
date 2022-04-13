@@ -16,6 +16,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Class that stores published messages by topic and by partition.
+ *
+ * @author anhnguyen
+ */
 public class Topic {
     /**
      * a hashmap that maps topic to a map between partition number and list of offsets in the topic and a list of first offset in segment files.
@@ -27,18 +32,34 @@ public class Topic {
      */
     private final Map<String, Map<Integer, List<byte[]>>> tmp;
 
+    /**
+     * Logger.
+     */
     private final Logger LOGGER = LoggerFactory.getLogger("operation");
 
+    /**
+     * Constructor.
+     */
     public Topic() {
         this.topics = new HashMap<>();
         this.tmp = new HashMap<>();
     }
 
+    /**
+     * Constructor.
+     *
+     * @param other topic
+     */
     public Topic(Topic other) {
         this.topics = new HashMap<>(other.topics);
         this.tmp = new HashMap<>(other.tmp);
     }
 
+    /**
+     * method to update the topic given the published request.
+     *
+     * @param pubReq published request
+     */
     public void updateTopic(PubReq pubReq) {
         String topic = pubReq.getTopic();
 
@@ -155,10 +176,20 @@ public class Topic {
         indexes.get(Constants.STARTING_OFFSET_INDEX).add(current);
     }
 
+    /**
+     * Getter for topics.
+     *
+     * @return topics
+     */
     public Map<String, Map<Integer, List<List<Long>>>> getTopics() {
         return topics;
     }
 
+    /**
+     * Getter for tmp.
+     *
+     * @return tmp
+     */
     public Map<String, Map<Integer, List<byte[]>>> getTmp() {
         return tmp;
     }

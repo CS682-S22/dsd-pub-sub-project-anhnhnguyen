@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import project2.Connection;
 import project2.Constants;
+import project2.Utils;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -70,19 +71,12 @@ public class Producer {
      * @return true if sending successfully and receiving ack else false
      */
     public boolean send(String topic, String key, byte[] data, int numPartitions) {
-        int length = topic.getBytes(StandardCharsets.UTF_8).length
-                + key.getBytes(StandardCharsets.UTF_8).length + data.length + 6;
-        ByteBuffer byteBuffer = ByteBuffer.allocate(length);
-        byteBuffer.put((byte) Constants.PUB_REQ);
-        byteBuffer.put(topic.getBytes(StandardCharsets.UTF_8));
-        byteBuffer.put((byte) 0);
+        ByteBuffer byteBuffer = ByteBuffer.allocate(key.getBytes(StandardCharsets.UTF_8).length + 1 + data.length);
         byteBuffer.put(key.getBytes(StandardCharsets.UTF_8));
         byteBuffer.put((byte) 0);
         byteBuffer.put(data);
-        byteBuffer.put((byte) 0);
-        byteBuffer.putShort((short) numPartitions);
         try {
-            connection.send(byteBuffer.array());
+            connection.send(Utils.preparePubReq(byteBuffer.array(), topic, (short) numPartitions).array());
             byte[] ack = connection.receive();
             int count = 0;
             while ((ack == null || ack[0] != Constants.ACK_RES) && count < Constants.RETRY) {

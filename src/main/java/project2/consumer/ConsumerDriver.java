@@ -65,10 +65,7 @@ public class ConsumerDriver {
             if (scanner.nextLine().equalsIgnoreCase(Constants.EXIT)) {
                 isRunning = false;
                 for (Thread t : threads) {
-                    t.join();
-                }
-                for (Consumer consumer : clients.keySet()) {
-                    consumer.close();
+                    t.join(100);
                 }
                 curator.close();
             }
@@ -98,6 +95,7 @@ public class ConsumerDriver {
                 }
             }
             bw.flush();
+            consumer.close();
         } catch (IOException e) {
             LOGGER.error(e.getMessage());
         }

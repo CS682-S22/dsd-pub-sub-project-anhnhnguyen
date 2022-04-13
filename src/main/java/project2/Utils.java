@@ -4,8 +4,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.Arrays;
+import java.util.List;
 
 /**
  * Class that has common methods to be used by multiple classes.
@@ -117,6 +123,43 @@ public class Utils {
         response.put((byte) 0);
         response.putShort(numPartitions);
         return response;
+    }
+
+    /**
+     * Method to find data from persistent log.
+     *
+     * @param offSetList         offset list
+     * @param startingOffsetList starting offset list
+     * @param index              index
+     * @param topic              topic
+     * @param partition          partition
+     * @return byte[]
+     */
+    public static byte[] findData(List<Long> offSetList, List<Long> startingOffsetList, int index, String topic, int partition) {
+        long offset = offSetList.get(index);
+        // search for the file that has the offset, binarySearch method include insertionPoint which is
+        // the index where the number would be put in if it doesn't find the number. So for this application
+        // return the lower index because that's where the byte offset would be.
+        int fileIndex = Arrays.binarySearch(startingOffsetList.toArray(), offset);
+        if (fileIndex < 0) {
+            fileIndex = -(fileIndex + 1) - 1;
+        }
+        String fileName = Constants.LOG_FOLDER + topic + Constants.PATH_STRING + partition +
+                Constants.PATH_STRING + startingOffsetList.get(fileIndex) + Constants.FILE_TYPE;
+        // only expose to consumer when data is flushed to disk, so need to check the log/ folder
+        if (Files.exists(Paths.get(fileName))) {
+            try (RandomAccessFile raf = new RandomAccessFile(fileName, "r")) {
+                long length = offSetList.get(index + 1) - offSetList.get(index);
+                long position = offSetList.get(index) - startingOffsetList.get(fileIndex);
+                byte[] data = new byte[(int) length];
+                raf.seek(position);
+                raf.read(data);
+                return data;
+            } catch (IOException e) {
+                LOGGER.error("processPullReq(): " + e.getMessage());
+            }
+        }
+        return null;
     }
 
 }

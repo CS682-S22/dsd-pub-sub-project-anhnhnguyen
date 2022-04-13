@@ -56,7 +56,7 @@ public class Consumer extends ConsumerDriver {
     /**
      * scheduler.
      */
-    private Timer timer;
+    private final Timer timer;
     /**
      * host.
      */
@@ -126,7 +126,7 @@ public class Consumer extends ConsumerDriver {
      * @param startingPosition starting position
      * @return byte array in the form of [1-byte message type] | [topic] | 0 | [8-byte offset] | [2-byte partition] | [2-byte num messages]
      */
-    protected byte[] prepareRequest(String topic, long startingPosition, int partition) {
+    private byte[] prepareRequest(String topic, long startingPosition, int partition) {
         ByteBuffer byteBuffer = ByteBuffer.allocate(topic.getBytes(StandardCharsets.UTF_8).length + 14);
         byteBuffer.put((byte) Constants.PULL_REQ);
         byteBuffer.put(topic.getBytes(StandardCharsets.UTF_8));
@@ -151,46 +151,55 @@ public class Consumer extends ConsumerDriver {
             getMessage();
         } catch (IOException e) {
             LOGGER.error("poll(): " + e.getMessage());
-            close();
-            Collection<BrokerMetadata> brokers = curator.findBrokers();
-            BrokerMetadata broker = findBroker(brokers, partition);
-            while (broker == null || broker.getListenAddress().equals(host) && broker.getListenPort() == port) {
-                synchronized (this) {
-                    try {
-                        wait(Constants.TIME_OUT);
-                    } catch (InterruptedException exc) {
-                        LOGGER.error("wait(): " + exc.getMessage());
-                    }
+            timer.cancel();
+            timer.purge();
+            findNewBroker();
+        }
+    }
+
+    /**
+     * Method to find a new broker when detecting broker failure.
+     */
+    private void findNewBroker() {
+        if (curator == null) {
+            return;
+        }
+        Collection<BrokerMetadata> brokers = curator.findBrokers();
+        BrokerMetadata broker = findBroker(brokers, partition);
+        while (broker == null || broker.getListenAddress().equals(host) && broker.getListenPort() == port) {
+            synchronized (this) {
+                try {
+                    wait(Constants.TIME_OUT);
+                } catch (InterruptedException exc) {
+                    LOGGER.error("wait(): " + exc.getMessage());
                 }
-                LOGGER.info("Looking for new broker");
-                brokers = curator.findBrokers();
-                broker = findBroker(brokers, partition);
             }
-            try {
-                // TODO: this seems to create a new Consumer
-                host = broker.getListenAddress();
-                port = broker.getListenPort();
-                socket = new Socket(broker.getListenAddress(), broker.getListenPort());
-                dis = new DataInputStream(socket.getInputStream());
-                dos = new DataOutputStream(socket.getOutputStream());
-                timer = new Timer();
-                // thread to periodically send a request to pull data and populate the queue where application polls from
-                timer.schedule(new TimerTask() {
-                    @Override
-                    public void run() {
-                        request();
-                    }
-                }, 0, Constants.INTERVAL);
-            } catch (IOException exc) {
-                LOGGER.error(exc.getMessage());
-            }
+            LOGGER.info("Looking for new broker");
+            brokers = curator.findBrokers();
+            broker = findBroker(brokers, partition);
+        }
+        try {
+            host = broker.getListenAddress();
+            port = broker.getListenPort();
+            socket = new Socket(broker.getListenAddress(), broker.getListenPort());
+            dis = new DataInputStream(socket.getInputStream());
+            dos = new DataOutputStream(socket.getOutputStream());
+            // thread to periodically send a request to pull data and populate the queue where application polls from
+            timer.schedule(new TimerTask() {
+                @Override
+                public void run() {
+                    request();
+                }
+            }, 0, Constants.INTERVAL);
+        } catch (IOException exc) {
+            LOGGER.error(exc.getMessage());
         }
     }
 
     /**
      * Method to get message from the connection and verify message is not duplicate.
      */
-    protected void getMessage() throws IOException {
+    private void getMessage() throws IOException {
         try {
             socket.setSoTimeout(Constants.TIME_OUT);
             int length = dis.readShort();
@@ -217,6 +226,7 @@ public class Consumer extends ConsumerDriver {
     public void close() {
         try {
             timer.cancel();
+            timer.purge();
             socket.shutdownInput();
             socket.shutdownOutput();
             socket.close();
