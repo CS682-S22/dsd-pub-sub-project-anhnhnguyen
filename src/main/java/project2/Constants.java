@@ -43,6 +43,18 @@ public class Constants {
      */
     public static final int CAT_FIN = 6;
     /**
+     * elect request.
+     */
+    public static final int ELECT_REQ = 7;
+    /**
+     * victory message.
+     */
+    public static final int VIC_MESS = 8;
+    /**
+     * reconcile req.
+     */
+    public static final int REC_REQ = 9;
+    /**
      * number of messages sent to consumer per each poll.
      */
     public static final int NUM_RESPONSE = 10;

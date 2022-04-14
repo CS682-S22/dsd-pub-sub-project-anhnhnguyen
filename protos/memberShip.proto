@@ -17,3 +17,7 @@ message MemberTable {
     int32 size = 1;
     repeated Broker brokers = 2;
 }
+
+message Status {
+    repeated bytes list = 1;
+}

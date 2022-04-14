@@ -1,6 +1,8 @@
 package project2.broker;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.gson.Gson;
+import org.apache.curator.framework.CuratorFramework;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import project2.Config;
@@ -8,9 +10,12 @@ import project2.Connection;
 import project2.Constants;
 import project2.broker.protos.Membership;
 import project2.zookeeper.BrokerMetadata;
+import project2.zookeeper.BrokerRegister;
+import project2.zookeeper.InstanceSerializerFactory;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousSocketChannel;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
@@ -51,15 +56,44 @@ public class Member {
      * current broker port.
      */
     private final int port;
+    /**
+     * current broker id.
+     */
+    private final int id;
+    /**
+     * current broker partition.
+     */
+    private final int partition;
+    /**
+     * id removal list.
+     */
+    private final List<Integer> removal;
+    /**
+     * counter for response during election.
+     */
+    private int numResp;
+    /**
+     * curator framework.
+     */
+    private final CuratorFramework curatorFramework;
+    /**
+     * object mapper.
+     */
+    private final ObjectMapper objectMapper;
 
     /**
      * Constructor.
      *
      * @param config config
      */
-    public Member(Config config) {
+    public Member(Config config, CuratorFramework curatorFramework, ObjectMapper objectMapper) {
         this.host = config.getHost();
         this.port = config.getPort();
+        this.partition = config.getPartition();
+        this.id = config.getId();
+        this.numResp = 0;
+        this.curatorFramework = curatorFramework;
+        this.objectMapper = objectMapper;
         if (config.isLeader()) {
             this.leader = new BrokerMetadata(this.host, this.port, config.getPartition(), config.getId());
             LOGGER.info("leader: " + config.getId());
@@ -68,6 +102,7 @@ public class Member {
         BrokerMetadata follower = new Gson().fromJson(config.getMembers(), BrokerMetadata.class);
         connectWithFollower(follower);
         this.inElection = false;
+        this.removal = new ArrayList<>();
         this.timer = new Timer();
         this.timer.schedule(new TimerTask() {
             @Override
@@ -163,16 +198,44 @@ public class Member {
     }
 
     /**
+     * Setter for leader.
+     *
+     * @param leader leader
+     */
+    public synchronized void setLeader(BrokerMetadata leader) {
+        this.leader = leader;
+    }
+
+    /**
+     * Getter for inElection status.
+     *
+     * @return in election
+     */
+    public boolean isInElection() {
+        return inElection;
+    }
+
+    /**
+     * Setter for inElection status.
+     *
+     * @param inElection status
+     */
+    public void setInElection(boolean inElection) {
+        this.inElection = inElection;
+    }
+
+    /**
      * Method to handle failure.
      *
      * @param broker failed broker
      */
     private synchronized void handleFailure(BrokerMetadata broker) {
-        if (broker.equals(leader)) {
+        followers.remove(broker);
+        removal.add(broker.getId());
+        LOGGER.info("removed failed broker: " + broker.getId());
+        if (broker.getId() == leader.getId()) {
             startElection();
         }
-        followers.remove(broker);
-        LOGGER.info("removed failed broker: " + broker.getId());
     }
 
     /**
@@ -189,12 +252,13 @@ public class Member {
             for (int i = 0; i < memberTable.getBrokersCount(); i++) {
                 Membership.Broker broker = memberTable.getBrokers(i);
                 BrokerMetadata brokerMetadata = new BrokerMetadata(broker.getAddress(), broker.getPort(), broker.getPartition(), broker.getId());
-                if (i == 0 && !broker.getAddress().equals(Constants.NONE) && leader == null) {
+                if (i == 0 && !broker.getAddress().equals(Constants.NONE) && leader == null && !removal.contains(brokerMetadata.getId())) {
                     leader = brokerMetadata;
                     LOGGER.info("leader: " + leader.getId());
                 }
                 if (!followers.containsKey(brokerMetadata) && !broker.getAddress().equals(Constants.NONE)
-                        && (!brokerMetadata.getListenAddress().equals(host) || brokerMetadata.getListenPort() != port)) {
+                        && (!brokerMetadata.getListenAddress().equals(host) || brokerMetadata.getListenPort() != port)
+                        && !removal.contains(brokerMetadata.getId())) {
                     AsynchronousSocketChannel socket = AsynchronousSocketChannel.open();
                     Future<Void> future = socket.connect(new InetSocketAddress(brokerMetadata.getListenAddress(), brokerMetadata.getListenPort()));
                     future.get();
@@ -205,15 +269,120 @@ public class Member {
                 }
             }
         } catch (IOException | ExecutionException | InterruptedException e) {
-            // do nothing
+            LOGGER.error(e.getMessage());
         }
     }
 
     /**
      * Method to elect a new leader.
      */
-    private synchronized void startElection() {
+    public synchronized void startElection() {
+        inElection = true;
+        BrokerMetadata failedBroker = new BrokerMetadata(leader.getListenAddress(), leader.getListenPort(), leader.getPartition(), leader.getId());
+        leader = null;
+        LOGGER.info("starting election");
+        for (BrokerMetadata broker : followers.keySet()) {
+            if (broker.getId() > id) {
+                break;
+            }
+            Thread t = new Thread(() -> sendElectReq(broker));
+            t.start();
+        }
 
+        if (numResp == 0) {
+            try {
+                LOGGER.info("Waiting for response from lower id followers");
+                wait(Constants.TIME_OUT);
+            } catch (InterruptedException e) {
+                LOGGER.error(e.getMessage());
+            }
+        }
+
+        if (numResp == 0) {
+            LOGGER.info("No response from lower id followers. Electing self as leader");
+            BrokerRegister brokerRegister = new BrokerRegister(curatorFramework,
+                    new InstanceSerializerFactory(objectMapper.reader(), objectMapper.writer()),
+                    Constants.SERVICE_NAME, failedBroker.getListenAddress(), failedBroker.getListenPort(), failedBroker.getPartition(), failedBroker.getId());
+            LOGGER.info("Deregister failed broker with Zookeeper");
+            brokerRegister.unregisterAvailability();
+            leader = new BrokerMetadata(host, port, partition, id);
+            byte[] vicMess = prepareVicMess();
+            try {
+                AsynchronousSocketChannel socket = AsynchronousSocketChannel.open();
+                Future<Void> future = socket.connect(new InetSocketAddress(host, port));
+                future.get();
+                Connection connection = new Connection(socket);
+                connection.send(vicMess);
+                connection.close();
+
+                for (BrokerMetadata broker : followers.keySet()) {
+                    LOGGER.info("sending victory message to: " + broker.getId());
+                    followers.get(broker).send(vicMess);
+                }
+            } catch (IOException | InterruptedException | ExecutionException e) {
+                LOGGER.error(e.getMessage());
+            }
+        } else {
+            if (leader == null) {
+                try {
+                    LOGGER.info("got response from lower id follower. wait for leader to be announced.");
+                    wait(Constants.TIME_OUT);
+                } catch (InterruptedException e) {
+                    LOGGER.error(e.getMessage());
+                }
+            }
+            if (leader == null) {
+                LOGGER.info("timeout. no leader announced. starting election again");
+                startElection();
+            } else {
+                LOGGER.info("leader selected: " + leader.getId());
+            }
+        }
+        inElection = false;
+        numResp = 0;
+        LOGGER.info("end of election");
+    }
+
+    /**
+     * Method to wrap the new leader info around byte array to be sent in the victory message.
+     *
+     * @return byte array
+     */
+    private byte[] prepareVicMess() {
+        Membership.Broker newLeader = Membership.Broker.newBuilder()
+                .setAddress(host)
+                .setPort(port)
+                .setPartition(partition)
+                .setId(id)
+                .build();
+        ByteBuffer byteBuffer = ByteBuffer.allocate(newLeader.toByteArray().length + 1);
+        byteBuffer.put((byte) Constants.VIC_MESS);
+        byteBuffer.put(newLeader.toByteArray());
+        return byteBuffer.array();
+    }
+
+    /**
+     * Method to send an election request.
+     *
+     * @param broker broker to send election request to
+     */
+    private void sendElectReq(BrokerMetadata broker) {
+        try {
+            LOGGER.info("sending election request to: " + broker.getId());
+            Connection connection = followers.get(broker);
+            connection.send(new byte[]{(byte) Constants.ELECT_REQ});
+            byte[] resp = connection.receive();
+            int count = 0;
+            while (resp == null && count < Constants.RETRY) {
+                resp = connection.receive();
+                count++;
+            }
+            if (resp != null) {
+                numResp++;
+            }
+        } catch (IOException | InterruptedException | ExecutionException e) {
+            LOGGER.error(e.getMessage());
+        }
     }
 
     /**
@@ -250,7 +419,8 @@ public class Member {
             }
             Membership.MemberTable memberTable = Membership.MemberTable.newBuilder()
                     .setSize(followers.size() + 1)
-                    .addAllBrokers(brokers).build();
+                    .addAllBrokers(brokers)
+                    .build();
             connection.send(memberTable.toByteArray());
         } catch (IOException | ExecutionException | InterruptedException e) {
             LOGGER.error("sendMembers(): " + e.getMessage());

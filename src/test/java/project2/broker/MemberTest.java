@@ -76,11 +76,11 @@ class MemberTest {
             Thread.sleep(1000);
             t1d.start();
 
-            member1 = new Member(config1);
-            member1a = new Member(config1a);
-            member1b = new Member(config1b);
-            member1c = new Member(config1c);
-            member1d = new Member(config1d);
+            member1 = new Member(config1, curator.getCuratorFramework(), curator.getObjectMapper());
+            member1a = new Member(config1a, curator.getCuratorFramework(), curator.getObjectMapper());
+            member1b = new Member(config1b, curator.getCuratorFramework(), curator.getObjectMapper());
+            member1c = new Member(config1c, curator.getCuratorFramework(), curator.getObjectMapper());
+            member1d = new Member(config1d, curator.getCuratorFramework(), curator.getObjectMapper());
 
         } catch (FileNotFoundException | InterruptedException e) {
             fail(e.getMessage());
