@@ -4,15 +4,21 @@ import com.google.gson.Gson;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import project2.Config;
+import project2.Connection;
 import project2.Constants;
 import project2.Utils;
 import project2.broker.ReqRes;
+import project2.broker.protos.Membership;
 import project2.zookeeper.BrokerMetadata;
 import project2.zookeeper.Curator;
 
 import java.io.*;
+import java.net.InetSocketAddress;
+import java.nio.channels.AsynchronousSocketChannel;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 
 /**
  * Driver for consumer to connect with the broker and request to pull message for certain topic at a certain position.
@@ -118,13 +124,48 @@ public class ConsumerDriver {
         for (int i = 0; i < config.getNumPartitions(); i++) {
             BrokerMetadata broker = findBroker(brokers, i);
             if (broker != null) {
-                Consumer consumer;
-                consumer = new Consumer(broker.getListenAddress(), broker.getListenPort(),
-                        config.getTopic(), config.getPosition(), i);
-                clients.put(consumer, i);
+                Membership.Broker follower = findFollower(broker);
+                if (follower != null) {
+                    Consumer consumer;
+                    consumer = new Consumer(follower.getAddress(), follower.getPort(), config.getTopic(),
+                            config.getPosition(), i);
+                    clients.put(consumer, i);
+                }
             }
         }
         return clients;
+    }
+
+    /**
+     * Method to connect with leader and find follower to read from.
+     *
+     * @param broker leader broker found through Zookeeper
+     * @return follower
+     */
+    protected static Membership.Broker findFollower(BrokerMetadata broker) {
+        try {
+            AsynchronousSocketChannel socket = AsynchronousSocketChannel.open();
+            Future<Void> future = socket.connect(new InetSocketAddress(broker.getListenAddress(), broker.getListenPort()));
+            future.get();
+            Connection connection = new Connection(socket);
+            Membership.Broker follower = null;
+            while (follower == null) {
+                connection.send(new byte[]{(byte) Constants.MEM_REQ});
+                byte[] resp = connection.receive();
+                while (resp == null) {
+                    resp = connection.receive();
+                }
+                Membership.MemberTable memberTable = Membership.MemberTable.parseFrom(resp);
+                if (memberTable.getBrokersCount() > 3) {
+                    follower = memberTable.getBrokers(memberTable.getBrokersCount() - 1);
+                }
+            }
+            connection.close();
+            return follower;
+        } catch (IOException | ExecutionException | InterruptedException e) {
+            LOGGER.error(e.getMessage());
+            return null;
+        }
     }
 
     /**

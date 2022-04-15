@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import project2.Constants;
 import project2.broker.ReqRes;
+import project2.broker.protos.Membership;
 import project2.zookeeper.BrokerMetadata;
 
 import java.io.DataInputStream;
@@ -178,10 +179,14 @@ public class Consumer extends ConsumerDriver {
             broker = findBroker(brokers, partition);
         }
         try {
-            LOGGER.info("Connecting with new broker: " + broker.getId());
-            host = broker.getListenAddress();
-            port = broker.getListenPort();
-            socket = new Socket(broker.getListenAddress(), broker.getListenPort());
+            Membership.Broker follower = findFollower(broker);
+            if (follower == null) {
+                return;
+            }
+            LOGGER.info("Connecting with new broker: " + follower.getId());
+            host = follower.getAddress();
+            port = follower.getPort();
+            socket = new Socket(host, port);
             dis = new DataInputStream(socket.getInputStream());
             dos = new DataOutputStream(socket.getOutputStream());
             // thread to periodically send a request to pull data and populate the queue where application polls from

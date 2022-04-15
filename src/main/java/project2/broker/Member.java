@@ -278,7 +278,10 @@ public class Member {
      */
     public synchronized void startElection() {
         inElection = true;
-        BrokerMetadata failedBroker = new BrokerMetadata(leader.getListenAddress(), leader.getListenPort(), leader.getPartition(), leader.getId());
+        BrokerMetadata failedBroker = null;
+        if (leader != null) {
+            failedBroker = new BrokerMetadata(leader.getListenAddress(), leader.getListenPort(), leader.getPartition(), leader.getId());
+        }
         leader = null;
         LOGGER.info("starting election");
         for (BrokerMetadata broker : followers.keySet()) {
@@ -302,11 +305,13 @@ public class Member {
 
         if (numResp == 0) {
             LOGGER.info("No response from lower id followers. Electing self as leader");
-            BrokerRegister brokerRegister = new BrokerRegister(curatorFramework,
-                    new InstanceSerializerFactory(objectMapper.reader(), objectMapper.writer()),
-                    Constants.SERVICE_NAME, failedBroker.getListenAddress(), failedBroker.getListenPort(), failedBroker.getPartition(), failedBroker.getId());
-            LOGGER.info("Deregister failed broker with Zookeeper");
-            brokerRegister.unregisterAvailability();
+            if (failedBroker != null) {
+                BrokerRegister brokerRegister = new BrokerRegister(curatorFramework,
+                        new InstanceSerializerFactory(objectMapper.reader(), objectMapper.writer()),
+                        Constants.SERVICE_NAME, failedBroker.getListenAddress(), failedBroker.getListenPort(), failedBroker.getPartition(), failedBroker.getId());
+                LOGGER.info("Deregister failed broker with Zookeeper");
+                brokerRegister.unregisterAvailability();
+            }
             leader = new BrokerMetadata(host, port, partition, id);
             byte[] vicMess = prepareVicMess();
             try {
