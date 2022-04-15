@@ -1,6 +1,8 @@
 package project2.broker;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.protobuf.ByteString;
+import com.google.protobuf.InvalidProtocolBufferException;
 import org.apache.curator.framework.CuratorFramework;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -85,6 +87,26 @@ public class Broker {
      * count of pub req from leader.
      */
     private int pubCount;
+    /**
+     * host.
+     */
+    private final String host;
+    /**
+     * port.
+     */
+    private final int port;
+    /**
+     * recent rep req.
+     */
+    private final List<byte[]> status;
+    /**
+     * curator framework.
+     */
+    private final CuratorFramework curatorFramework;
+    /**
+     * object mapper.
+     */
+    private final ObjectMapper objectMapper;
 
     /**
      * Start the broker to listen on the given host name and port number. Also delete old log files
@@ -103,6 +125,11 @@ public class Broker {
         this.repQueue = new ConcurrentLinkedQueue<>();
         this.isCatchingUp = true;
         this.pubCount = 0;
+        this.host = config.getHost();
+        this.port = config.getPort();
+        this.status = new ArrayList<>();
+        this.curatorFramework = curatorFramework;
+        this.objectMapper = objectMapper;
         try {
             this.server = AsynchronousServerSocketChannel.open().bind(new InetSocketAddress(config.getHost(), config.getPort()));
             LOGGER.info("broker started on: " + server.getLocalAddress());
@@ -121,7 +148,7 @@ public class Broker {
         this.timer.schedule(new TimerTask() {
             @Override
             public void run() {
-                members = new Member(config);
+                members = new Member(config, curatorFramework, objectMapper);
                 LOGGER.info("set up members table");
             }
         }, 0);
@@ -205,6 +232,8 @@ public class Broker {
                             }
                         } catch (IOException | InterruptedException | ExecutionException e) {
                             LOGGER.error(e.getMessage());
+                            connection.close();
+                            break;
                         }
                     }
                     LOGGER.info("closing socket channel");
@@ -245,6 +274,12 @@ public class Broker {
             processRepReq(connection, request);
         } else if (request[0] == Constants.CAT_FIN) {
             processCatFin(connection);
+        } else if (request[0] == Constants.ELECT_REQ) {
+            processElectReq(connection);
+        } else if (request[0] == Constants.VIC_MESS) {
+            processVicMess(request);
+        } else if (request[0] == Constants.REC_REQ) {
+            processRecReq(connection);
         } else {
             LOGGER.error("Invalid request: " + request[0]);
         }
@@ -461,6 +496,10 @@ public class Broker {
     private void processRepReq(Connection connection, byte[] request) {
         try {
             repQueue.add(request);
+            if (status.size() == 2) {
+                status.remove(0);
+            }
+            status.add(request);
             LOGGER.info("sending ack to replicate request");
             connection.send(new byte[]{(byte) Constants.ACK_RES});
         } catch (IOException | InterruptedException | ExecutionException e) {
@@ -480,6 +519,123 @@ public class Broker {
             connection.send(new byte[]{(byte) Constants.ACK_RES});
         } catch (IOException | ExecutionException | InterruptedException e) {
             LOGGER.error("processCatFin: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Method to send acknowledgement to election request.
+     *
+     * @param connection connection
+     */
+    private void processElectReq(Connection connection) {
+        try {
+            LOGGER.info("membership: sending acknowledgement for election request.");
+            connection.send(new byte[]{(byte) Constants.ACK_RES});
+        } catch (IOException | ExecutionException | InterruptedException e) {
+            LOGGER.error(e.getMessage());
+        }
+        if (!members.isInElection()) {
+            members.setInElection(true);
+            members.startElection();
+        }
+    }
+
+    /**
+     * Method to process victory message by updating the new leader in the members table.
+     *
+     * @param request victory message
+     */
+    private void processVicMess(byte[] request) {
+        byte[] brokerBytes = new byte[request.length - 1];
+        System.arraycopy(request, 1, brokerBytes, 0, brokerBytes.length);
+        try {
+            Membership.Broker broker = Membership.Broker.parseFrom(brokerBytes);
+            BrokerMetadata leader = new BrokerMetadata(broker.getAddress(), broker.getPort(), broker.getPartition(), broker.getId());
+            LOGGER.info("membership: new leader: " + broker.getId());
+            if (leader.getListenAddress().equals(host) && leader.getListenPort() == port) {
+                isLeader = true;
+                reconcileLog();
+                while (!repQueue.isEmpty()) {
+                    try {
+                        repQueue.wait();
+                    } catch (InterruptedException e) {
+                        LOGGER.error(e.getMessage());
+                    }
+                }
+                timer.cancel();
+                brokerRegister = new BrokerRegister(curatorFramework,
+                        new InstanceSerializerFactory(objectMapper.reader(), objectMapper.writer()),
+                        Constants.SERVICE_NAME, host, port, leader.getPartition(), leader.getId());
+                brokerRegister.registerAvailability();
+                LOGGER.info("membership: registering with Zookeeper");
+            } else {
+                members.setLeader(leader);
+            }
+        } catch (InvalidProtocolBufferException e) {
+            LOGGER.error(e.getMessage());
+        }
+    }
+
+    /**
+     * Method to reconcile logs across different followers.
+     */
+    private void reconcileLog() {
+        TreeMap<BrokerMetadata, Connection> followerList = new TreeMap<>(members.getFollowers());
+        for (BrokerMetadata follower : followerList.keySet()) {
+            try {
+                AsynchronousSocketChannel socket = AsynchronousSocketChannel.open();
+                Future<Void> future = socket.connect(new InetSocketAddress(follower.getListenAddress(), follower.getListenPort()));
+                future.get();
+                Connection followerConnection = new Connection(socket);
+                followers.put(follower, followerConnection);
+                LOGGER.info("membership: sending request to reconcile logs to: " + follower.getId());
+                followerConnection.send(new byte[]{(byte) Constants.REC_REQ});
+                byte[] message = followerConnection.receive();
+                int count = 0;
+                while (message == null && count < Constants.RETRY) {
+                    message = followerConnection.receive();
+                    count++;
+                }
+                if (message != null) {
+                    Membership.Status statusPro = Membership.Status.parseFrom(message);
+                    byte[] req0 = statusPro.getList(0).toByteArray();
+                    byte[] req1 = statusPro.getList(1).toByteArray();
+                    if (status.contains(req0) && !status.contains(req1)) {
+                        LOGGER.info("membership: updating log");
+                        repQueue.add(req1);
+                        status.remove(0);
+                        status.add(req1);
+                    } else if (!status.contains(req0) && status.contains(req1)) {
+                        LOGGER.info("membership: sending replication request");
+                        followerConnection.send(status.get(1));
+                        followerConnection.waitForAck();
+                    }
+                    LOGGER.info("membership: logs are same");
+                }
+            } catch (IOException | InterruptedException | ExecutionException e) {
+                LOGGER.error(e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * Method to send the status list over the connection.
+     *
+     * @param connection connection
+     */
+    private void processRecReq(Connection connection) {
+        try {
+            LOGGER.info("membership: sending log status");
+            List<ByteString> statusList = new ArrayList<>();
+            for (byte[] bytes : status) {
+                statusList.add(ByteString.copyFrom(bytes));
+            }
+            Membership.Status statusProto = Membership.Status.newBuilder()
+                    .addAllList(statusList)
+                    .build();
+            connection.send(statusProto.toByteArray());
+        } catch (IOException | ExecutionException | InterruptedException e) {
+            LOGGER.error(e.getMessage());
         }
     }
 

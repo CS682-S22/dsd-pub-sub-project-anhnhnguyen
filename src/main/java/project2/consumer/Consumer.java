@@ -56,7 +56,7 @@ public class Consumer extends ConsumerDriver {
     /**
      * scheduler.
      */
-    private final Timer timer;
+    private Timer timer;
     /**
      * host.
      */
@@ -151,8 +151,7 @@ public class Consumer extends ConsumerDriver {
             getMessage();
         } catch (IOException e) {
             LOGGER.error("poll(): " + e.getMessage());
-            timer.cancel();
-            timer.purge();
+            close();
             findNewBroker();
         }
     }
@@ -179,12 +178,14 @@ public class Consumer extends ConsumerDriver {
             broker = findBroker(brokers, partition);
         }
         try {
+            LOGGER.info("Connecting with new broker: " + broker.getId());
             host = broker.getListenAddress();
             port = broker.getListenPort();
             socket = new Socket(broker.getListenAddress(), broker.getListenPort());
             dis = new DataInputStream(socket.getInputStream());
             dos = new DataOutputStream(socket.getOutputStream());
             // thread to periodically send a request to pull data and populate the queue where application polls from
+            timer = new Timer();
             timer.schedule(new TimerTask() {
                 @Override
                 public void run() {
