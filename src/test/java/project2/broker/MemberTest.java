@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 class MemberTest {
 
     private Config config1;
+    private Config config1a;
     private Member member1;
     private Member member1a;
     private Member member1b;
@@ -36,7 +37,7 @@ class MemberTest {
             Curator curator = new Curator("127.0.0.1:2181");
 
             config1 = new Gson().fromJson(new FileReader("configs/broker1.json"), Config.class);
-            Config config1a = new Gson().fromJson(new FileReader("configs/broker1a.json"), Config.class);
+            config1a = new Gson().fromJson(new FileReader("configs/broker1a.json"), Config.class);
             Config config1b = new Gson().fromJson(new FileReader("configs/broker1b.json"), Config.class);
             Config config1c = new Gson().fromJson(new FileReader("configs/broker1c.json"), Config.class);
             Config config1d = new Gson().fromJson(new FileReader("configs/broker1d.json"), Config.class);
@@ -102,7 +103,7 @@ class MemberTest {
     }
 
     @Test
-    void testGetLeader() {
+    void testGetLeaderNoFailure() {
         BrokerMetadata leader = member1.getLeader();
         assertEquals(leader.getListenAddress(), config1.getHost());
         assertEquals(leader.getListenPort(), config1.getPort());
@@ -135,7 +136,7 @@ class MemberTest {
     }
 
     @Test
-    void testGetFollowers() {
+    void testGetFollowersNoFailure() {
         TreeMap<BrokerMetadata, Connection> followers = member1.getFollowers();
         assertEquals(followers.keySet().size(), 4);
 
@@ -150,5 +151,95 @@ class MemberTest {
 
         followers = member1d.getFollowers();
         assertEquals(followers.keySet().size(), 4);
+    }
+
+    @Test
+    void testGetLeaderFollowerFailure() {
+        broker1d.close();
+        try {
+            Thread.sleep(500);
+        } catch (InterruptedException e) {
+            fail(e.getMessage());
+        }
+        BrokerMetadata leader = member1.getLeader();
+        assertEquals(leader.getListenAddress(), config1.getHost());
+        assertEquals(leader.getListenPort(), config1.getPort());
+        assertEquals(leader.getPartition(), config1.getPartition());
+        assertEquals(leader.getId(), config1.getId());
+
+        leader = member1a.getLeader();
+        assertEquals(leader.getListenAddress(), config1.getHost());
+        assertEquals(leader.getListenPort(), config1.getPort());
+        assertEquals(leader.getPartition(), config1.getPartition());
+        assertEquals(leader.getId(), config1.getId());
+
+        leader = member1b.getLeader();
+        assertEquals(leader.getListenAddress(), config1.getHost());
+        assertEquals(leader.getListenPort(), config1.getPort());
+        assertEquals(leader.getPartition(), config1.getPartition());
+        assertEquals(leader.getId(), config1.getId());
+
+        leader = member1c.getLeader();
+        assertEquals(leader.getListenAddress(), config1.getHost());
+        assertEquals(leader.getListenPort(), config1.getPort());
+        assertEquals(leader.getPartition(), config1.getPartition());
+        assertEquals(leader.getId(), config1.getId());
+    }
+
+    @Test
+    void testGetFollowersFollowerFailure() {
+        broker1d.close();
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+            fail(e.getMessage());
+        }
+        TreeMap<BrokerMetadata, Connection> followers = member1.getFollowers();
+        assertEquals(followers.keySet().size(), 3);
+
+        followers = member1a.getFollowers();
+        assertEquals(followers.keySet().size(), 3);
+
+        followers = member1b.getFollowers();
+        assertEquals(followers.keySet().size(), 3);
+
+        followers = member1c.getFollowers();
+        assertEquals(followers.keySet().size(), 3);
+    }
+
+    @Test
+    void testGetLeaderLeaderFailure() {
+        broker1.close();
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            fail(e.getMessage());
+        }
+        BrokerMetadata leader = member1a.getLeader();
+        assertEquals(leader.getListenAddress(), config1a.getHost());
+        assertEquals(leader.getListenPort(), config1a.getPort());
+        assertEquals(leader.getPartition(), config1a.getPartition());
+        assertEquals(leader.getId(), config1a.getId());
+    }
+
+    @Test
+    void testGetFollowersLeaderFailure() {
+        broker1.close();
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+            fail(e.getMessage());
+        }
+        TreeMap<BrokerMetadata, Connection> followers = member1a.getFollowers();
+        assertEquals(followers.keySet().size(), 3);
+
+        followers = member1b.getFollowers();
+        assertEquals(followers.keySet().size(), 3);
+
+        followers = member1c.getFollowers();
+        assertEquals(followers.keySet().size(), 3);
+
+        followers = member1d.getFollowers();
+        assertEquals(followers.keySet().size(), 3);
     }
 }

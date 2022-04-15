@@ -233,7 +233,7 @@ public class Member {
         followers.remove(broker);
         removal.add(broker.getId());
         LOGGER.info("removed failed broker: " + broker.getId());
-        if (broker.getId() == leader.getId()) {
+        if (leader != null && broker.getId() == leader.getId()) {
             startElection();
         }
     }
@@ -285,8 +285,10 @@ public class Member {
             if (broker.getId() > id) {
                 break;
             }
-            Thread t = new Thread(() -> sendElectReq(broker));
-            t.start();
+            if (!removal.contains(broker.getId())) {
+                Thread t = new Thread(() -> sendElectReq(broker));
+                t.start();
+            }
         }
 
         if (numResp == 0) {
@@ -316,8 +318,10 @@ public class Member {
                 connection.close();
 
                 for (BrokerMetadata broker : followers.keySet()) {
-                    LOGGER.info("sending victory message to: " + broker.getId());
-                    followers.get(broker).send(vicMess);
+                    if (!removal.contains(broker.getId())) {
+                        LOGGER.info("sending victory message to: " + broker.getId());
+                        followers.get(broker).send(vicMess);
+                    }
                 }
             } catch (IOException | InterruptedException | ExecutionException e) {
                 LOGGER.error(e.getMessage());
@@ -333,6 +337,7 @@ public class Member {
             }
             if (leader == null) {
                 LOGGER.info("timeout. no leader announced. starting election again");
+                numResp = 0;
                 startElection();
             } else {
                 LOGGER.info("leader selected: " + leader.getId());

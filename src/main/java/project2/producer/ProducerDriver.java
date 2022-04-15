@@ -11,9 +11,7 @@ import project2.zookeeper.Curator;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 
 /**
  * Driver for producer to connect with broker and publish message.
@@ -60,6 +58,7 @@ public class ProducerDriver {
      */
     private static void findBrokers(Curator curator, String host, int port) {
         Collection<BrokerMetadata> brokers = curator.findBrokers();
+        Collections.reverse((List<?>) brokers);
         for (BrokerMetadata broker : brokers) {
             int partition = broker.getPartition();
             String brokerHost = broker.getListenAddress();

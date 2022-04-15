@@ -32,6 +32,10 @@ public class ConsumerDriver {
      * curator.
      */
     protected static Curator curator;
+    /**
+     * number of brokers.
+     */
+    private static int numBrokers;
 
     /**
      * Main program for consumer to start a thread to pull message from consumer until user asks to exit.
@@ -43,6 +47,7 @@ public class ConsumerDriver {
         try {
             Config config = new Gson().fromJson(new FileReader(args[0]), Config.class);
             config.validate();
+            numBrokers = config.getNumBrokers();
             curator = new Curator(config.getZkConnection());
             Collection<BrokerMetadata> brokers = curator.findBrokers();
             while (brokers.size() != config.getNumBrokers()) {
@@ -130,8 +135,9 @@ public class ConsumerDriver {
      * @return broker that store the partition
      */
     protected static BrokerMetadata findBroker(Collection<BrokerMetadata> brokers, int partition) {
+        Collections.reverse((List<?>) brokers);
         for (BrokerMetadata broker : brokers) {
-            if (broker.getPartition() == partition % brokers.size()) {
+            if (broker.getPartition() == partition % numBrokers) {
                 return broker;
             }
         }
