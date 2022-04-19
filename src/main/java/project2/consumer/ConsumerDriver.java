@@ -156,7 +156,7 @@ public class ConsumerDriver {
                     resp = connection.receive();
                 }
                 Membership.MemberTable memberTable = Membership.MemberTable.parseFrom(resp);
-                if (memberTable.getBrokersCount() > 3) {
+                if (memberTable.getBrokersCount() != 0) {
                     follower = memberTable.getBrokers(memberTable.getBrokersCount() - 1);
                 }
             }

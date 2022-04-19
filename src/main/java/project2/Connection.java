@@ -8,6 +8,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousSocketChannel;
 import java.util.LinkedList;
 import java.util.Queue;
+import java.util.Random;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -61,6 +62,7 @@ public class Connection {
      * @return byte array of the message
      */
     public byte[] receive() throws IOException, InterruptedException, ExecutionException {
+        processDelay();
         if (!messages.isEmpty()) {
             return messages.poll();
         }
@@ -108,6 +110,7 @@ public class Connection {
      * @param message byte array
      */
     public void send(byte[] message) throws IOException, InterruptedException, ExecutionException {
+        processDelay();
         if (socketChannel != null && socketChannel.isOpen()) {
             ByteBuffer buffer = ByteBuffer.allocate(message.length + 2);
             buffer.putShort((short) message.length);
@@ -136,6 +139,7 @@ public class Connection {
      * Method to wait for acknowledgement.
      */
     public void waitForAck() {
+        processDelay();
         try {
             byte[] ack = receive();
             int count = 0;
@@ -145,6 +149,19 @@ public class Connection {
             }
         } catch (IOException | InterruptedException | ExecutionException e) {
             LOGGER.error("processPubReq(): " + e.getMessage());
+        }
+    }
+
+    /**
+     * Helper method to generate delay time.
+     */
+    private void processDelay() {
+        Random random = new Random();
+        int actualDelay = random.nextInt(Constants.DELAY);
+        try {
+            Thread.sleep(actualDelay);
+        } catch (InterruptedException e) {
+            LOGGER.error(e.getMessage());
         }
     }
 }

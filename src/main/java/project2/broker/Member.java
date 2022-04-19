@@ -203,7 +203,11 @@ public class Member {
      * @param leader leader
      */
     public synchronized void setLeader(BrokerMetadata leader) {
+        if (this.leader == null || this.leader.getId() != leader.getId()) {
+            followers.remove(leader);
+        }
         this.leader = leader;
+        LOGGER.info("new leader set: " + this.leader.getId());
     }
 
     /**
@@ -216,15 +220,6 @@ public class Member {
     }
 
     /**
-     * Setter for inElection status.
-     *
-     * @param inElection status
-     */
-    public void setInElection(boolean inElection) {
-        this.inElection = inElection;
-    }
-
-    /**
      * Method to handle failure.
      *
      * @param broker failed broker
@@ -233,6 +228,9 @@ public class Member {
         followers.remove(broker);
         removal.add(broker.getId());
         LOGGER.info("removed failed broker: " + broker.getId());
+        if (leader != null) {
+            LOGGER.info("current leader: " + leader.getId());
+        }
         if (leader != null && broker.getId() == leader.getId()) {
             startElection();
         }
@@ -277,6 +275,9 @@ public class Member {
      * Method to elect a new leader.
      */
     public synchronized void startElection() {
+        if (inElection) {
+            return;
+        }
         inElection = true;
         BrokerMetadata failedBroker = null;
         if (leader != null) {
@@ -342,6 +343,7 @@ public class Member {
             }
             if (leader == null) {
                 LOGGER.info("timeout. no leader announced. starting election again");
+                inElection = false;
                 numResp = 0;
                 startElection();
             } else {

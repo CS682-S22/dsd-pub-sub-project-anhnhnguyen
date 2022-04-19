@@ -95,6 +95,10 @@ public class Constants {
      */
     public static final int INTERVAL = 500;
     /**
+     * delay.
+     */
+    public static final int DELAY = 50;
+    /**
      * zk base path.
      */
     public static final String BASE_PATH = "/pubsub";

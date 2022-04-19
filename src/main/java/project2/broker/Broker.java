@@ -535,7 +535,6 @@ public class Broker {
             LOGGER.error(e.getMessage());
         }
         if (!members.isInElection()) {
-            members.setInElection(true);
             members.startElection();
         }
     }
