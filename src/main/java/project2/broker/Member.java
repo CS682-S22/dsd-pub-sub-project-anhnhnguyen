@@ -202,10 +202,7 @@ public class Member {
      *
      * @param leader leader
      */
-    public synchronized void setLeader(BrokerMetadata leader) {
-        if (this.leader == null || this.leader.getId() != leader.getId()) {
-            followers.remove(leader);
-        }
+    public void setLeader(BrokerMetadata leader) {
         this.leader = leader;
         LOGGER.info("new leader set: " + this.leader.getId());
     }
