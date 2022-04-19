@@ -53,8 +53,8 @@ public class ProducerDriver {
      * Method to find brokers and store them in a map for easy lookup based on partition number.
      *
      * @param curator curator
-     * @param host host
-     * @param port port
+     * @param host    host
+     * @param port    port
      */
     private static void findBrokers(Curator curator, String host, int port) {
         Collection<BrokerMetadata> brokers = curator.findBrokers();
@@ -76,8 +76,8 @@ public class ProducerDriver {
     /**
      * Method to read from file line by line, and publish message to the appropriate broker based on key.
      *
-     * @param config       config
-     * @param curator      curator
+     * @param config  config
+     * @param curator curator
      */
     private static void publish(Config config, Curator curator) {
         try (FileInputStream fis = new FileInputStream(config.getFile());
@@ -98,25 +98,7 @@ public class ProducerDriver {
                     LOGGER.info("Looking for broker");
                     findBrokers(curator, null, 0);
                 }
-                Producer producer = partitionMap.get(partition);
-                boolean success = producer.send(topic, key, data, topicPartitions);
-                // success is false when IOException happens or broker fails
-                // then remove that producer connecting with that broker from the partition map
-                // and look for a new broker through Zookeeper
-                while (!success) {
-                    String currentHost = producer.getHost();
-                    int currentPort = producer.getPort();
-                    partitionMap.remove(partition);
-                    while (!partitionMap.containsKey(partition)) {
-                        synchronized (partitionMap) {
-                            partitionMap.wait(Constants.TIME_OUT);
-                        }
-                        LOGGER.info("Looking for new broker");
-                        findBrokers(curator, currentHost, currentPort);
-                    }
-                    producer = partitionMap.get(partition);
-                    success = producer.send(topic, key, data, topicPartitions);
-                }
+                publishHelper(partition, topic, key, data, topicPartitions, curator);
             }
             for (Producer producer : partitionMap.values()) {
                 producer.close();
@@ -125,6 +107,42 @@ public class ProducerDriver {
         } catch (IOException | InterruptedException e) {
             LOGGER.error(e.getMessage());
             System.exit(1);
+        }
+    }
+
+    /**
+     * Method to publish topic and find new producer in case of failure.
+     *
+     * @param partition       partition
+     * @param topic           topic
+     * @param key             key
+     * @param data            data
+     * @param topicPartitions number of partitions for that topic
+     * @param curator         curator
+     */
+    private static void publishHelper(int partition, String topic, String key, byte[] data, int topicPartitions, Curator curator) {
+        Producer producer = partitionMap.get(partition);
+        boolean success = producer.send(topic, key, data, topicPartitions);
+        // success is false when IOException happens or broker fails
+        // then remove that producer connecting with that broker from the partition map
+        // and look for a new broker through Zookeeper
+        while (!success) {
+            String currentHost = producer.getHost();
+            int currentPort = producer.getPort();
+            partitionMap.remove(partition);
+            while (!partitionMap.containsKey(partition)) {
+                synchronized (partitionMap) {
+                    try {
+                        partitionMap.wait(Constants.TIME_OUT);
+                    } catch (InterruptedException e) {
+                        LOGGER.error(e.getMessage());
+                    }
+                }
+                LOGGER.info("Looking for new broker");
+                findBrokers(curator, currentHost, currentPort);
+            }
+            producer = partitionMap.get(partition);
+            success = producer.send(topic, key, data, topicPartitions);
         }
     }
 

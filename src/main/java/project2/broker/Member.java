@@ -311,24 +311,7 @@ public class Member {
                 brokerRegister.unregisterAvailability();
             }
             leader = new BrokerMetadata(host, port, partition, id);
-            byte[] vicMess = prepareVicMess();
-            try {
-                AsynchronousSocketChannel socket = AsynchronousSocketChannel.open();
-                Future<Void> future = socket.connect(new InetSocketAddress(host, port));
-                future.get();
-                Connection connection = new Connection(socket);
-                connection.send(vicMess);
-                connection.close();
-
-                for (BrokerMetadata broker : followers.keySet()) {
-                    if (!removal.contains(broker.getId())) {
-                        LOGGER.info("sending victory message to: " + broker.getId());
-                        followers.get(broker).send(vicMess);
-                    }
-                }
-            } catch (IOException | InterruptedException | ExecutionException e) {
-                LOGGER.error(e.getMessage());
-            }
+            sendVicMess();
         } else {
             if (leader == null) {
                 try {
@@ -368,6 +351,30 @@ public class Member {
         byteBuffer.put((byte) Constants.VIC_MESS);
         byteBuffer.put(newLeader.toByteArray());
         return byteBuffer.array();
+    }
+
+    /**
+     * Method to send victory message to other brokers.
+     */
+    private synchronized void sendVicMess() {
+        byte[] vicMess = prepareVicMess();
+        try {
+            AsynchronousSocketChannel socket = AsynchronousSocketChannel.open();
+            Future<Void> future = socket.connect(new InetSocketAddress(host, port));
+            future.get();
+            Connection connection = new Connection(socket);
+            connection.send(vicMess);
+            connection.close();
+
+            for (BrokerMetadata broker : followers.keySet()) {
+                if (!removal.contains(broker.getId())) {
+                    LOGGER.info("sending victory message to: " + broker.getId());
+                    followers.get(broker).send(vicMess);
+                }
+            }
+        } catch (IOException | InterruptedException | ExecutionException e) {
+            LOGGER.error(e.getMessage());
+        }
     }
 
     /**

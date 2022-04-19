@@ -162,7 +162,7 @@ public class Broker {
                 public void run() {
                     removeCatchingUpStatus();
                 }
-            }, Constants.TIME_OUT * 120);
+            }, Constants.TIME_OUT * 5);
 
             this.timer.schedule(new TimerTask() {
                 @Override
