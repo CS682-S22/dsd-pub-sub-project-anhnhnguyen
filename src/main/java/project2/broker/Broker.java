@@ -58,7 +58,7 @@ public class Broker {
     /**
      * timer to schedule task.
      */
-    private final Timer timer;
+    private Timer timer;
     /**
      * membership table.
      */
@@ -68,9 +68,13 @@ public class Broker {
      */
     private boolean isLeader;
     /**
-     * list of followers.
+     * list of async followers.
      */
-    private final Map<BrokerMetadata, Connection> followers;
+    private final Map<BrokerMetadata, Connection> asyncFollowers;
+    /**
+     * list of sync followers.
+     */
+    private final Map<BrokerMetadata, Connection> syncFollowers;
     /**
      * topic class.
      */
@@ -121,7 +125,8 @@ public class Broker {
         this.isRunning = true;
         this.timer = new Timer();
         this.isLeader = config.isLeader();
-        this.followers = new ConcurrentHashMap<>();
+        this.syncFollowers = new ConcurrentHashMap<>();
+        this.asyncFollowers = new ConcurrentHashMap<>();
         this.repQueue = new ConcurrentLinkedQueue<>();
         this.isCatchingUp = true;
         this.pubCount = 0;
@@ -140,7 +145,7 @@ public class Broker {
         if (this.isLeader) {
             this.brokerRegister = new BrokerRegister(curatorFramework,
                     new InstanceSerializerFactory(objectMapper.reader(), objectMapper.writer()),
-                    Constants.SERVICE_NAME, config.getHost(), config.getPort(), config.getPartition(), config.getId());
+                    Constants.SERVICE_NAME, config.getHost(), config.getPort(), config.getPartition(), config.getId(), config.isAsync());
             this.brokerRegister.registerAvailability();
             LOGGER.info("registering with Zookeeper");
         }
@@ -305,8 +310,8 @@ public class Broker {
         LOGGER.info("publish request. topic: " + pubReq.getTopic() + ", key: " + pubReq.getKey() +
                 ", data: " + new String(pubReq.getData(), StandardCharsets.UTF_8));
 
-        if (isLeader) {
-            try {
+        try {
+            if (isLeader) {
                 reconcileList();
                 int partition = pubReq.getKey().hashCode() % pubReq.getNumPartitions();
                 long current = 0;
@@ -314,22 +319,30 @@ public class Broker {
                     List<List<Long>> indexes = topicStruct.getTopics().get(pubReq.getTopic()).get(partition);
                     current = indexes.get(Constants.OFFSET_INDEX).get(indexes.get(Constants.OFFSET_INDEX).size() - 1);
                 }
-                for (Connection followerConnection : followers.values()) {
-                    LOGGER.info("Sending replication request");
+                for (Connection followerConnection : syncFollowers.values()) {
+                    LOGGER.info("Sending replication request to sync followers");
                     followerConnection.send(Utils.prepareData(Constants.REP_REQ, current, request).array());
                     followerConnection.waitForAck();
                 }
-            } catch (IOException | InterruptedException | ExecutionException e) {
-                LOGGER.error("processPubReq(): " + e.getMessage());
-            }
-        }
 
-        topicStruct.updateTopic(pubReq);
-        try {
-            LOGGER.info("sending ack to publish request");
-            connection.send(new byte[]{(byte) Constants.ACK_RES});
+                topicStruct.updateTopic(pubReq);
+
+                LOGGER.info("sending ack to publish request");
+                connection.send(new byte[]{(byte) Constants.ACK_RES});
+
+                for (Connection followerConnection : asyncFollowers.values()) {
+                    LOGGER.info("Sending replication request to async followers");
+                    followerConnection.send(Utils.prepareData(Constants.REP_REQ, current, request).array());
+                }
+            } else {
+                topicStruct.updateTopic(pubReq);
+
+                LOGGER.info("sending ack to publish request");
+                connection.send(new byte[]{(byte) Constants.ACK_RES});
+
+            }
         } catch (IOException | InterruptedException | ExecutionException e) {
-            LOGGER.error("processPubReq(): " + e.getMessage());
+            LOGGER.error(e.getMessage());
         }
     }
 
@@ -340,33 +353,69 @@ public class Broker {
         if (members == null) {
             return;
         }
+        TreeMap<BrokerMetadata, Connection> followerList = new TreeMap<>(members.getFollowers());
+        for (BrokerMetadata follower : followerList.keySet()) {
+            if (!asyncFollowers.containsKey(follower) && follower.isAsync()) {
+                updateListAddition(follower, true);
+            } else if (!syncFollowers.containsKey(follower) && !follower.isAsync()) {
+                updateListAddition(follower, false);
+            }
+        }
+        updateListRemoval(followerList, true);
+        updateListRemoval(followerList, false);
+    }
+
+    /**
+     * Method to update async or sync list with new follower.
+     *
+     * @param follower new follower
+     * @param isAsync  follower's async status
+     */
+    private void updateListAddition(BrokerMetadata follower, boolean isAsync) {
         try {
-            TreeMap<BrokerMetadata, Connection> followerList = new TreeMap<>(members.getFollowers());
-            for (BrokerMetadata follower : followerList.keySet()) {
-                if (!followers.containsKey(follower)) {
-                    AsynchronousSocketChannel socket = AsynchronousSocketChannel.open();
-                    Future<Void> future = socket.connect(new InetSocketAddress(follower.getListenAddress(), follower.getListenPort()));
-                    future.get();
-                    Connection followerConnection = new Connection(socket);
-                    followers.put(follower, followerConnection);
-                    Topic copy = new Topic(topicStruct);
-                    timer.schedule(new TimerTask() {
-                        @Override
-                        public void run() {
-                            sendSnapshot(follower, copy);
-                        }
-                    }, 0);
-                }
+            AsynchronousSocketChannel socket = AsynchronousSocketChannel.open();
+            Future<Void> future = socket.connect(new InetSocketAddress(follower.getListenAddress(), follower.getListenPort()));
+            future.get();
+            Connection followerConnection = new Connection(socket);
+            if (isAsync) {
+                asyncFollowers.put(follower, followerConnection);
+                LOGGER.info("added to async follower list: " + follower.getId());
+            } else {
+                syncFollowers.put(follower, followerConnection);
+                LOGGER.info("added to sync follower list: " + follower.getId());
             }
-            for (BrokerMetadata follower : followers.keySet()) {
-                if (!followerList.containsKey(follower)) {
-                    followers.get(follower).close();
-                    followers.remove(follower);
-                    LOGGER.info("removed from follower list: " + follower.getId());
+
+            Topic copy = new Topic(topicStruct);
+            timer.schedule(new TimerTask() {
+                @Override
+                public void run() {
+                    sendSnapshot(follower, copy);
                 }
-            }
+            }, 0);
         } catch (IOException | InterruptedException | ExecutionException e) {
-            LOGGER.error("reconcileList(): " + e.getMessage());
+            LOGGER.error(e.getMessage());
+        }
+    }
+
+    /**
+     * Method to remove stale brokers from list.
+     *
+     * @param followerList follower list
+     * @param isAsync      async status
+     */
+    private void updateListRemoval(TreeMap<BrokerMetadata, Connection> followerList, boolean isAsync) {
+        Map<BrokerMetadata, Connection> followers;
+        if (isAsync) {
+            followers = asyncFollowers;
+        } else  {
+            followers = syncFollowers;
+        }
+        for (BrokerMetadata follower : followers.keySet()) {
+            if (!followerList.containsKey(follower)) {
+                followers.get(follower).close();
+                followers.remove(follower);
+                LOGGER.info("removed from follower list: " + follower.getId());
+            }
         }
     }
 
@@ -549,7 +598,7 @@ public class Broker {
         System.arraycopy(request, 1, brokerBytes, 0, brokerBytes.length);
         try {
             Membership.Broker broker = Membership.Broker.parseFrom(brokerBytes);
-            BrokerMetadata leader = new BrokerMetadata(broker.getAddress(), broker.getPort(), broker.getPartition(), broker.getId());
+            BrokerMetadata leader = new BrokerMetadata(broker.getAddress(), broker.getPort(), broker.getPartition(), broker.getId(), broker.getIsAsync());
             LOGGER.info("membership: new leader: " + broker.getId());
             if (leader.getListenAddress().equals(host) && leader.getListenPort() == port) {
                 isLeader = true;
@@ -562,9 +611,10 @@ public class Broker {
                     }
                 }
                 timer.cancel();
+                timer = new Timer();
                 brokerRegister = new BrokerRegister(curatorFramework,
                         new InstanceSerializerFactory(objectMapper.reader(), objectMapper.writer()),
-                        Constants.SERVICE_NAME, host, port, leader.getPartition(), leader.getId());
+                        Constants.SERVICE_NAME, host, port, leader.getPartition(), leader.getId(), leader.isAsync());
                 brokerRegister.registerAvailability();
                 LOGGER.info("membership: registering with Zookeeper");
             } else {
@@ -586,7 +636,13 @@ public class Broker {
                 Future<Void> future = socket.connect(new InetSocketAddress(follower.getListenAddress(), follower.getListenPort()));
                 future.get();
                 Connection followerConnection = new Connection(socket);
-                followers.put(follower, followerConnection);
+                if (follower.isAsync()) {
+                    asyncFollowers.put(follower, followerConnection);
+                    LOGGER.info("added to async follower list: " + follower.getId());
+                } else {
+                    syncFollowers.put(follower, followerConnection);
+                    LOGGER.info("added to sync follower list: " + follower.getId());
+                }
                 LOGGER.info("membership: sending request to reconcile logs to: " + follower.getId());
                 followerConnection.send(new byte[]{(byte) Constants.REC_REQ});
                 byte[] message = followerConnection.receive();
@@ -633,6 +689,7 @@ public class Broker {
                     .addAllList(statusList)
                     .build();
             connection.send(statusProto.toByteArray());
+            members.setInElection(false);
         } catch (IOException | ExecutionException | InterruptedException e) {
             LOGGER.error(e.getMessage());
         }
@@ -646,7 +703,10 @@ public class Broker {
             LOGGER.info("closing broker");
             isRunning = false;
             timer.cancel();
-            for (Connection connection : followers.values()) {
+            for (Connection connection : asyncFollowers.values()) {
+                connection.close();
+            }
+            for (Connection connection : syncFollowers.values()) {
                 connection.close();
             }
             if (brokerRegister != null) {

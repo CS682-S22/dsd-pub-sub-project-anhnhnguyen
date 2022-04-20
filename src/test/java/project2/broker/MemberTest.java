@@ -104,6 +104,11 @@ class MemberTest {
 
     @Test
     void testGetLeaderNoFailure() {
+        try {
+            Thread.sleep(500);
+        } catch (InterruptedException e) {
+            fail(e.getMessage());
+        }
         BrokerMetadata leader = member1.getLeader();
         assertEquals(leader.getListenAddress(), config1.getHost());
         assertEquals(leader.getListenPort(), config1.getPort());
@@ -137,6 +142,11 @@ class MemberTest {
 
     @Test
     void testGetFollowersNoFailure() {
+        try {
+            Thread.sleep(500);
+        } catch (InterruptedException e) {
+            fail(e.getMessage());
+        }
         TreeMap<BrokerMetadata, Connection> followers = member1.getFollowers();
         assertEquals(followers.keySet().size(), 4);
 

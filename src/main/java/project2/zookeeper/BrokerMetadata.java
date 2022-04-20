@@ -36,6 +36,12 @@ public class BrokerMetadata {
     private final int id;
 
     /**
+     * isAsync.
+     */
+    @JsonProperty("isAsync")
+    private final boolean isAsync;
+
+    /**
      * Constructor.
      *
      * @param listenAddress listening address
@@ -44,11 +50,12 @@ public class BrokerMetadata {
      */
     @JsonCreator
     public BrokerMetadata(@JsonProperty("listenAddress") String listenAddress, @JsonProperty("listenPort") int listenPort,
-                          @JsonProperty("partition") int partition, @JsonProperty("id") int id) {
+                          @JsonProperty("partition") int partition, @JsonProperty("id") int id, @JsonProperty("isAsync") boolean isAsync) {
         this.listenAddress = listenAddress;
         this.listenPort = listenPort;
         this.partition = partition;
         this.id = id;
+        this.isAsync = isAsync;
     }
 
     /**
@@ -83,5 +90,14 @@ public class BrokerMetadata {
      */
     public int getId() {
         return id;
+    }
+
+    /**
+     * Getter for async status.
+     *
+     * @return async status
+     */
+    public boolean isAsync() {
+        return isAsync;
     }
 }

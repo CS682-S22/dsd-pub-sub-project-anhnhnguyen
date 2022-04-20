@@ -47,6 +47,12 @@ public final class Membership {
      * @return The id.
      */
     int getId();
+
+    /**
+     * <code>bool isAsync = 5;</code>
+     * @return The isAsync.
+     */
+    boolean getIsAsync();
   }
   /**
    * Protobuf type {@code Broker}
@@ -113,6 +119,11 @@ public final class Membership {
             case 32: {
 
               id_ = input.readInt32();
+              break;
+            }
+            case 40: {
+
+              isAsync_ = input.readBool();
               break;
             }
             default: {
@@ -218,6 +229,17 @@ public final class Membership {
       return id_;
     }
 
+    public static final int ISASYNC_FIELD_NUMBER = 5;
+    private boolean isAsync_;
+    /**
+     * <code>bool isAsync = 5;</code>
+     * @return The isAsync.
+     */
+    @java.lang.Override
+    public boolean getIsAsync() {
+      return isAsync_;
+    }
+
     private byte memoizedIsInitialized = -1;
     @java.lang.Override
     public final boolean isInitialized() {
@@ -244,6 +266,9 @@ public final class Membership {
       if (id_ != 0) {
         output.writeInt32(4, id_);
       }
+      if (isAsync_ != false) {
+        output.writeBool(5, isAsync_);
+      }
       unknownFields.writeTo(output);
     }
 
@@ -268,6 +293,10 @@ public final class Membership {
         size += com.google.protobuf.CodedOutputStream
           .computeInt32Size(4, id_);
       }
+      if (isAsync_ != false) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeBoolSize(5, isAsync_);
+      }
       size += unknownFields.getSerializedSize();
       memoizedSize = size;
       return size;
@@ -291,6 +320,8 @@ public final class Membership {
           != other.getPartition()) return false;
       if (getId()
           != other.getId()) return false;
+      if (getIsAsync()
+          != other.getIsAsync()) return false;
       if (!unknownFields.equals(other.unknownFields)) return false;
       return true;
     }
@@ -310,6 +341,9 @@ public final class Membership {
       hash = (53 * hash) + getPartition();
       hash = (37 * hash) + ID_FIELD_NUMBER;
       hash = (53 * hash) + getId();
+      hash = (37 * hash) + ISASYNC_FIELD_NUMBER;
+      hash = (53 * hash) + com.google.protobuf.Internal.hashBoolean(
+          getIsAsync());
       hash = (29 * hash) + unknownFields.hashCode();
       memoizedHashCode = hash;
       return hash;
@@ -451,6 +485,8 @@ public final class Membership {
 
         id_ = 0;
 
+        isAsync_ = false;
+
         return this;
       }
 
@@ -481,6 +517,7 @@ public final class Membership {
         result.port_ = port_;
         result.partition_ = partition_;
         result.id_ = id_;
+        result.isAsync_ = isAsync_;
         onBuilt();
         return result;
       }
@@ -541,6 +578,9 @@ public final class Membership {
         }
         if (other.getId() != 0) {
           setId(other.getId());
+        }
+        if (other.getIsAsync() != false) {
+          setIsAsync(other.getIsAsync());
         }
         this.mergeUnknownFields(other.unknownFields);
         onChanged();
@@ -736,6 +776,37 @@ public final class Membership {
       public Builder clearId() {
         
         id_ = 0;
+        onChanged();
+        return this;
+      }
+
+      private boolean isAsync_ ;
+      /**
+       * <code>bool isAsync = 5;</code>
+       * @return The isAsync.
+       */
+      @java.lang.Override
+      public boolean getIsAsync() {
+        return isAsync_;
+      }
+      /**
+       * <code>bool isAsync = 5;</code>
+       * @param value The isAsync to set.
+       * @return This builder for chaining.
+       */
+      public Builder setIsAsync(boolean value) {
+        
+        isAsync_ = value;
+        onChanged();
+        return this;
+      }
+      /**
+       * <code>bool isAsync = 5;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearIsAsync() {
+        
+        isAsync_ = false;
         onChanged();
         return this;
       }
@@ -2276,12 +2347,12 @@ public final class Membership {
       descriptor;
   static {
     java.lang.String[] descriptorData = {
-      "\n\027protos/memberShip.proto\"F\n\006Broker\022\017\n\007a" +
+      "\n\027protos/memberShip.proto\"W\n\006Broker\022\017\n\007a" +
       "ddress\030\001 \001(\t\022\014\n\004port\030\002 \001(\005\022\021\n\tpartition\030" +
-      "\003 \001(\005\022\n\n\002id\030\004 \001(\005\"5\n\013MemberTable\022\014\n\004size" +
-      "\030\001 \001(\005\022\030\n\007brokers\030\002 \003(\0132\007.Broker\"\026\n\006Stat" +
-      "us\022\014\n\004list\030\001 \003(\014B$\n\026project2.broker.prot" +
-      "osB\nMembershipb\006proto3"
+      "\003 \001(\005\022\n\n\002id\030\004 \001(\005\022\017\n\007isAsync\030\005 \001(\010\"5\n\013Me" +
+      "mberTable\022\014\n\004size\030\001 \001(\005\022\030\n\007brokers\030\002 \003(\013" +
+      "2\007.Broker\"\026\n\006Status\022\014\n\004list\030\001 \003(\014B$\n\026pro" +
+      "ject2.broker.protosB\nMembershipb\006proto3"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
@@ -2292,7 +2363,7 @@ public final class Membership {
     internal_static_Broker_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessageV3.FieldAccessorTable(
         internal_static_Broker_descriptor,
-        new java.lang.String[] { "Address", "Port", "Partition", "Id", });
+        new java.lang.String[] { "Address", "Port", "Partition", "Id", "IsAsync", });
     internal_static_MemberTable_descriptor =
       getDescriptor().getMessageTypes().get(1);
     internal_static_MemberTable_fieldAccessorTable = new

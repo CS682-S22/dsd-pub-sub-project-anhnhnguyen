@@ -65,6 +65,10 @@ public class Member {
      */
     private final int partition;
     /**
+     * current broker async status.
+     */
+    private final boolean isAsync;
+    /**
      * id removal list.
      */
     private final List<Integer> removal;
@@ -91,11 +95,12 @@ public class Member {
         this.port = config.getPort();
         this.partition = config.getPartition();
         this.id = config.getId();
+        this.isAsync = config.isAsync();
         this.numResp = 0;
         this.curatorFramework = curatorFramework;
         this.objectMapper = objectMapper;
         if (config.isLeader()) {
-            this.leader = new BrokerMetadata(this.host, this.port, config.getPartition(), config.getId());
+            this.leader = new BrokerMetadata(this.host, this.port, config.getPartition(), config.getId(), config.isAsync());
             LOGGER.info("leader: " + config.getId());
         }
         this.followers = new TreeMap<>(Comparator.comparingInt(BrokerMetadata::getId));
@@ -217,6 +222,16 @@ public class Member {
     }
 
     /**
+     * Setter for election state.
+     *
+     * @param inElection election state
+     */
+    public void setInElection(boolean inElection) {
+        this.inElection = inElection;
+        LOGGER.info("end of election");
+    }
+
+    /**
      * Method to handle failure.
      *
      * @param broker failed broker
@@ -246,7 +261,7 @@ public class Member {
             }
             for (int i = 0; i < memberTable.getBrokersCount(); i++) {
                 Membership.Broker broker = memberTable.getBrokers(i);
-                BrokerMetadata brokerMetadata = new BrokerMetadata(broker.getAddress(), broker.getPort(), broker.getPartition(), broker.getId());
+                BrokerMetadata brokerMetadata = new BrokerMetadata(broker.getAddress(), broker.getPort(), broker.getPartition(), broker.getId(), broker.getIsAsync());
                 if (i == 0 && !broker.getAddress().equals(Constants.NONE) && leader == null && !removal.contains(brokerMetadata.getId())) {
                     leader = brokerMetadata;
                     LOGGER.info("leader: " + leader.getId());
@@ -278,7 +293,7 @@ public class Member {
         inElection = true;
         BrokerMetadata failedBroker = null;
         if (leader != null) {
-            failedBroker = new BrokerMetadata(leader.getListenAddress(), leader.getListenPort(), leader.getPartition(), leader.getId());
+            failedBroker = new BrokerMetadata(leader.getListenAddress(), leader.getListenPort(), leader.getPartition(), leader.getId(), leader.isAsync());
         }
         leader = null;
         LOGGER.info("starting election");
@@ -306,11 +321,11 @@ public class Member {
             if (failedBroker != null) {
                 BrokerRegister brokerRegister = new BrokerRegister(curatorFramework,
                         new InstanceSerializerFactory(objectMapper.reader(), objectMapper.writer()),
-                        Constants.SERVICE_NAME, failedBroker.getListenAddress(), failedBroker.getListenPort(), failedBroker.getPartition(), failedBroker.getId());
+                        Constants.SERVICE_NAME, failedBroker.getListenAddress(), failedBroker.getListenPort(), failedBroker.getPartition(), failedBroker.getId(), failedBroker.isAsync());
                 LOGGER.info("Deregister failed broker with Zookeeper");
                 brokerRegister.unregisterAvailability();
             }
-            leader = new BrokerMetadata(host, port, partition, id);
+            leader = new BrokerMetadata(host, port, partition, id, isAsync);
             sendVicMess();
         } else {
             if (leader == null) {
@@ -330,9 +345,7 @@ public class Member {
                 LOGGER.info("leader selected: " + leader.getId());
             }
         }
-        inElection = false;
         numResp = 0;
-        LOGGER.info("end of election");
     }
 
     /**
@@ -456,6 +469,7 @@ public class Member {
                     .setAddress(Constants.NONE)
                     .setPort(0).setPartition(0)
                     .setPartition(0)
+                    .setIsAsync(false)
                     .build();
         } else {
             brokerProto = Membership.Broker.newBuilder()
@@ -463,6 +477,7 @@ public class Member {
                     .setPort(broker.getListenPort())
                     .setPartition(broker.getPartition())
                     .setId(broker.getId())
+                    .setIsAsync(broker.isAsync())
                     .build();
         }
         return brokerProto;

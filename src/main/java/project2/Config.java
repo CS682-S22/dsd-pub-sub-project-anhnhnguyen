@@ -61,6 +61,10 @@ public class Config {
      * member info.
      */
     private final String members;
+    /**
+     * async status.
+     */
+    private final boolean isAsync;
 
     /**
      * Constructor.
@@ -78,9 +82,10 @@ public class Config {
      * @param isLeader      leader status
      * @param id            id
      * @param members       members
+     * @param isAsync       async status
      */
     public Config(String host, int port, String file, String topic, long position, int partition, boolean isLeader, String members,
-                  String zkConnection, Map<String, Integer> topics, int numPartitions, int numBrokers, int id) {
+                  String zkConnection, Map<String, Integer> topics, int numPartitions, int numBrokers, int id, boolean isAsync) {
         this.host = host;
         this.port = port;
         this.file = file;
@@ -94,6 +99,7 @@ public class Config {
         this.isLeader = isLeader;
         this.id = id;
         this.members = members;
+        this.isAsync = isAsync;
     }
 
     /**
@@ -211,6 +217,15 @@ public class Config {
      */
     public String getMembers() {
         return members;
+    }
+
+    /**
+     * Getter for async status.
+     *
+     * @return async status
+     */
+    public boolean isAsync() {
+        return isAsync;
     }
 
     /**
