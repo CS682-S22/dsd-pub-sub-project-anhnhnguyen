@@ -66,6 +66,10 @@ public class Consumer extends ConsumerDriver {
      * port.
      */
     private int port;
+    /**
+     * failed broker list.
+     */
+    private final List<String> removal;
 
     /**
      * Constructor.
@@ -87,6 +91,7 @@ public class Consumer extends ConsumerDriver {
         }
         this.host = host;
         this.port = port;
+        this.removal = new ArrayList<>();
         this.topic = topic;
         this.startingPosition = startingPosition;
         this.partition = partition;
@@ -152,6 +157,7 @@ public class Consumer extends ConsumerDriver {
             getMessage();
         } catch (IOException e) {
             LOGGER.error("poll(): " + e.getMessage());
+            removal.add(host);
             close();
             findNewBroker();
         }
@@ -166,7 +172,7 @@ public class Consumer extends ConsumerDriver {
         }
         Collection<BrokerMetadata> brokers = curator.findBrokers();
         BrokerMetadata broker = findBroker(brokers, partition);
-        while (broker == null || broker.getListenAddress().equals(host) && broker.getListenPort() == port) {
+        while (broker == null || checkRemoval(broker.getListenAddress())) {
             synchronized (this) {
                 try {
                     wait(Constants.TIME_OUT);
@@ -200,6 +206,21 @@ public class Consumer extends ConsumerDriver {
         } catch (IOException exc) {
             LOGGER.error(exc.getMessage());
         }
+    }
+
+    /**
+     * Method to check if the broker found from Zookeeper is already in the failed list.
+     *
+     * @param address address
+     * @return true if in the list, else false
+     */
+    private boolean checkRemoval(String address) {
+        for (String s : removal) {
+            if (s.equals(address)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

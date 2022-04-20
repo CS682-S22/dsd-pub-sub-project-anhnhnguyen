@@ -30,6 +30,11 @@ public class ProducerDriver {
     private static final Map<Integer, Producer> partitionMap = new HashMap<>();
 
     /**
+     * failed broker list.
+     */
+    private static final List<Producer> removal = new ArrayList<>();
+
+    /**
      * main program to start producer and send messages to broker.
      *
      * @param args program arguments
@@ -45,7 +50,7 @@ public class ProducerDriver {
         }
 
         Curator curator = new Curator(config.getZkConnection());
-        findBrokers(curator, null, 0);
+        findBrokers(curator);
         publish(config, curator);
     }
 
@@ -53,10 +58,8 @@ public class ProducerDriver {
      * Method to find brokers and store them in a map for easy lookup based on partition number.
      *
      * @param curator curator
-     * @param host    host
-     * @param port    port
      */
-    private static void findBrokers(Curator curator, String host, int port) {
+    private static void findBrokers(Curator curator) {
         Collection<BrokerMetadata> brokers = curator.findBrokers();
         Collections.reverse((List<?>) brokers);
         for (BrokerMetadata broker : brokers) {
@@ -66,11 +69,27 @@ public class ProducerDriver {
             // if broker fails, only replace the partition that that broker is in charge of with the new producer
             // connecting with that broker. Need to check that new broker is not the same because Zookeeper
             // may take some time to reflect the change.
-            if (!partitionMap.containsKey(partition) && (!brokerHost.equals(host) || brokerPort != port)) {
+            if (!partitionMap.containsKey(partition) && !checkRemoval(brokerHost, brokerPort)) {
                 Producer producer = new Producer(broker.getListenAddress(), broker.getListenPort());
                 partitionMap.put(partition, producer);
             }
         }
+    }
+
+    /**
+     * Helper method to check failed broker list and not try to reconnect again.
+     *
+     * @param host host
+     * @param port port
+     * @return true if broker is in the list, else false
+     */
+    private static boolean checkRemoval(String host, int port) {
+        for (Producer producer : removal) {
+            if (producer.getHost().equals(host) && producer.getPort() == port) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -96,7 +115,7 @@ public class ProducerDriver {
                         partitionMap.wait(Constants.TIME_OUT);
                     }
                     LOGGER.info("Looking for broker");
-                    findBrokers(curator, null, 0);
+                    findBrokers(curator);
                 }
                 publishHelper(partition, topic, key, data, topicPartitions, curator);
             }
@@ -127,8 +146,7 @@ public class ProducerDriver {
         // then remove that producer connecting with that broker from the partition map
         // and look for a new broker through Zookeeper
         while (!success) {
-            String currentHost = producer.getHost();
-            int currentPort = producer.getPort();
+            removal.add(partitionMap.get(partition));
             partitionMap.remove(partition);
             while (!partitionMap.containsKey(partition)) {
                 synchronized (partitionMap) {
@@ -139,7 +157,7 @@ public class ProducerDriver {
                     }
                 }
                 LOGGER.info("Looking for new broker");
-                findBrokers(curator, currentHost, currentPort);
+                findBrokers(curator);
             }
             producer = partitionMap.get(partition);
             success = producer.send(topic, key, data, topicPartitions);

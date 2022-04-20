@@ -607,11 +607,7 @@ public class Broker {
                 isLeader = true;
                 reconcileLog();
                 while (!repQueue.isEmpty()) {
-                    try {
-                        repQueue.wait();
-                    } catch (InterruptedException e) {
-                        LOGGER.error(e.getMessage());
-                    }
+                    poll();
                 }
                 timer.cancel();
                 timer = new Timer();
