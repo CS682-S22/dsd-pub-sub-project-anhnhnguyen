@@ -689,6 +689,7 @@ public class Broker {
                     .addAllList(statusList)
                     .build();
             connection.send(statusProto.toByteArray());
+            members.setInElection(false);
         } catch (IOException | ExecutionException | InterruptedException e) {
             LOGGER.error(e.getMessage());
         }

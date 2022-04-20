@@ -222,6 +222,16 @@ public class Member {
     }
 
     /**
+     * Setter for election state.
+     *
+     * @param inElection election state
+     */
+    public void setInElection(boolean inElection) {
+        this.inElection = inElection;
+        LOGGER.info("end of election");
+    }
+
+    /**
      * Method to handle failure.
      *
      * @param broker failed broker
@@ -335,9 +345,7 @@ public class Member {
                 LOGGER.info("leader selected: " + leader.getId());
             }
         }
-        inElection = false;
         numResp = 0;
-        LOGGER.info("end of election");
     }
 
     /**
