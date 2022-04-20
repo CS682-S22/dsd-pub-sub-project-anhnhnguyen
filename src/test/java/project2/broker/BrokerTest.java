@@ -32,6 +32,9 @@ class BrokerTest {
         try {
             Config config = new Gson().fromJson(new FileReader("configs/broker1.json"), Config.class);
             broker = new Broker(config, curator.getCuratorFramework(), curator.getObjectMapper());
+            Config config1a = new Gson().fromJson(new FileReader("configs/broker1a.json"), Config.class);
+            Broker broker1a = new Broker(config1a, curator.getCuratorFramework(), curator.getObjectMapper());
+            broker1a.start();
             host = config.getHost();
             port = config.getPort();
             broker.start();

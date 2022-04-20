@@ -147,6 +147,9 @@ public class Connection {
                 ack = receive();
                 count++;
             }
+            if (ack != null && ack[0] == Constants.ACK_RES) {
+                LOGGER.info("received ack");
+            }
         } catch (IOException | InterruptedException | ExecutionException e) {
             LOGGER.error("processPubReq(): " + e.getMessage());
         }

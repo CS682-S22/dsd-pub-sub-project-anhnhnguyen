@@ -93,7 +93,7 @@ class ProducerTest {
         });
         t.start();
         Producer producer = new Producer("localhost", 1024);
-        for (int i = 0; i < 100000; i++) {
+        for (int i = 0; i < 100; i++) {
             producer.send(topic, key, data, 1);
         }
         producer.send(topic, key, "FIN".getBytes(StandardCharsets.UTF_8), 1);

@@ -51,6 +51,10 @@ public class BrokerRegister {
      */
     private final int id;
     /**
+     * async status.
+     */
+    private final boolean isAsync;
+    /**
      * service discovery.
      */
     private ServiceDiscovery<BrokerMetadata> discovery;
@@ -65,9 +69,10 @@ public class BrokerRegister {
      * @param listenPort                listening port
      * @param partition                 partition
      * @param id                        id
+     * @param isAsync                   async status
      */
     public BrokerRegister(CuratorFramework curatorFramework, InstanceSerializerFactory instanceSerializerFactory,
-                          String serviceName, String listenAddress, int listenPort, int partition, int id) {
+                          String serviceName, String listenAddress, int listenPort, int partition, int id, boolean isAsync) {
         this.curatorFramework = curatorFramework;
         this.jacksonInstanceSerializer = instanceSerializerFactory.getInstanceSerializer(new TypeReference<>() {
         });
@@ -76,6 +81,7 @@ public class BrokerRegister {
         this.listenPort = listenPort;
         this.partition = partition;
         this.id = id;
+        this.isAsync = isAsync;
     }
 
     /**
@@ -112,7 +118,7 @@ public class BrokerRegister {
      * @throws Exception exception
      */
     private ServiceInstance<BrokerMetadata> getInstance() throws Exception {
-        BrokerMetadata broker = new BrokerMetadata(listenAddress, listenPort, partition, id);
+        BrokerMetadata broker = new BrokerMetadata(listenAddress, listenPort, partition, id, isAsync);
         return ServiceInstance.<BrokerMetadata>builder()
                 .name(serviceName)
                 .address(listenAddress)
