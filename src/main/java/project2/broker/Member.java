@@ -288,6 +288,7 @@ public class Member {
      */
     public synchronized void startElection() {
         if (inElection) {
+            LOGGER.info("election already started");
             return;
         }
         inElection = true;

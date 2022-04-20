@@ -323,6 +323,7 @@ public class Broker {
                     LOGGER.info("Sending replication request to sync followers");
                     followerConnection.send(Utils.prepareData(Constants.REP_REQ, current, request).array());
                     followerConnection.waitForAck();
+                    Thread.sleep(Constants.TIME_OUT); // only for demo purpose to delay message to some followers so that during failure followers may not have the same logs
                 }
 
                 topicStruct.updateTopic(pubReq);
@@ -407,7 +408,7 @@ public class Broker {
         Map<BrokerMetadata, Connection> followers;
         if (isAsync) {
             followers = asyncFollowers;
-        } else  {
+        } else {
             followers = syncFollowers;
         }
         for (BrokerMetadata follower : followers.keySet()) {
@@ -585,6 +586,8 @@ public class Broker {
         }
         if (!members.isInElection()) {
             members.startElection();
+        } else {
+            LOGGER.info("election already started");
         }
     }
 
@@ -655,22 +658,42 @@ public class Broker {
                     Membership.Status statusPro = Membership.Status.parseFrom(message);
                     byte[] req0 = statusPro.getList(0).toByteArray();
                     byte[] req1 = statusPro.getList(1).toByteArray();
-                    if (status.contains(req0) && !status.contains(req1)) {
+                    LOGGER.info("membership: rep0 length: " + req0.length);
+                    LOGGER.info("membership: rep1 length: " + req1.length);
+                    LOGGER.info("membership: status0 length: " + status.get(0).length);
+                    LOGGER.info("membership: status1 length: " + status.get(1).length);
+                    if (checkStatus(req0) && !checkStatus(req1)) {
                         LOGGER.info("membership: updating log");
                         repQueue.add(req1);
                         status.remove(0);
                         status.add(req1);
-                    } else if (!status.contains(req0) && status.contains(req1)) {
+                    } else if (!checkStatus(req0) && checkStatus(req1)) {
                         LOGGER.info("membership: sending replication request");
                         followerConnection.send(status.get(1));
                         followerConnection.waitForAck();
+                    } else if (checkStatus(req0) && checkStatus(req1)) {
+                        LOGGER.info("membership: logs are same");
                     }
-                    LOGGER.info("membership: logs are same");
                 }
             } catch (IOException | InterruptedException | ExecutionException e) {
                 LOGGER.error(e.getMessage());
             }
         }
+    }
+
+    /**
+     * Helper method to verify that status contains the byte array or not.
+     *
+     * @param req byte array
+     * @return true if contains, else false
+     */
+    private boolean checkStatus(byte[] req) {
+        for (byte[] bytes : status) {
+            if (Arrays.equals(bytes, req)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

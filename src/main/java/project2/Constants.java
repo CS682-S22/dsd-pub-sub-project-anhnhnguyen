@@ -73,7 +73,7 @@ public class Constants {
     /**
      * maximum segment file.
      */
-    public static final int SEGMENT_SIZE = 1024;
+    public static final int SEGMENT_SIZE = 256; // kafka default is 1024, making this small just for demo purpose
     /**
      * persistent folder.
      */
